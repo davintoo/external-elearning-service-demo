@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {mkdtempSync, writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 
 import {createApp} from '../src/app.js';
 import {MockLmsClient} from '../src/lms/mock-client.js';
@@ -174,4 +177,27 @@ test('an unexpected error never leaks its internals to the browser', async () =>
         assert.equal(rawBody.includes('lms_api_token'), false);
         assert.equal(rawBody.includes('super-secret'), false);
     }, {client: explodingClient});
+});
+
+test('serves the built web app and falls back to index.html for the launch url', async () => {
+    const dist = mkdtempSync(join(tmpdir(), 'demo-web-'));
+    writeFileSync(join(dist, 'index.html'), '<!doctype html><title>simulator</title>');
+
+    const server = createApp({config: CONFIG, client: new MockLmsClient(), webDist: dist})
+        .listen(0);
+    await new Promise(resolve => server.once('listening', resolve));
+    const base = `http://127.0.0.1:${server.address().port}`;
+
+    try {
+        const root = await fetch(`${base}/?session_id=${SESSION_ID}`);
+        assert.equal(root.status, 200);
+        assert.match(await root.text(), /simulator/);
+
+        // The API must keep answering JSON, not the SPA shell.
+        const missing = await fetch(`${base}/api/session/nonsense`);
+        assert.equal(missing.status, 404);
+        assert.equal((await missing.json()).error.key, 'not_found');
+    } finally {
+        server.close();
+    }
 });

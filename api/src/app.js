@@ -7,7 +7,7 @@ import {demoLmsRouter} from './demo-lms.js';
 
 const asyncRoute = handler => (req, res, next) => Promise.resolve(handler(req, res)).catch(next);
 
-export function createApp({config, client}) {
+export function createApp({config, client, webDist = null}) {
     const app = express();
 
     app.use(express.json({limit: '2mb'}));
@@ -67,6 +67,15 @@ export function createApp({config, client}) {
         // what an integrator came here for.
         res.json({sent: payload, received});
     }));
+
+    // Built single-port mode: the API also serves the compiled Angular app, so the host page
+    // and the simulator share one origin and 'self' is a sufficient frame-ancestors policy.
+    if (webDist) {
+        app.use(express.static(webDist));
+        app.get(/^\/(?!api\/|demo\/).*/, (req, res) => {
+            res.sendFile('index.html', {root: webDist});
+        });
+    }
 
     // eslint-disable-next-line no-unused-vars
     app.use((error, req, res, next) => {
