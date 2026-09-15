@@ -61,6 +61,7 @@ dist/
 .env
 *.log
 .angular/
+.superpowers/
 ```
 
 - [ ] **Step 2: Copy the published contract into the repo**
@@ -539,6 +540,7 @@ git commit -m "feat: checklist content and contract-validated payload builder"
 
 **Files:**
 - Create: `api/src/errors.js`
+- Create: `api/src/session-id.js`
 - Create: `api/src/lms/mock-client.js`
 - Test: `api/test/mock-client.test.js`
 
@@ -722,6 +724,18 @@ export function forcedError(code) {
 }
 ```
 
+`api/src/session-id.js`:
+
+```js
+/**
+ * The published SessionId pattern, verbatim: lowercase hex only, unbraced, version nibble 4
+ * and an RFC-4122 variant nibble. Deliberately stricter than a general-purpose UUID check,
+ * because the contract is - anything else is not an id the LMS could have minted.
+ */
+export const SESSION_ID_PATTERN =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+```
+
 - [ ] **Step 4: Write the mock client**
 
 `api/src/lms/mock-client.js`:
@@ -733,6 +747,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 
 import {LmsError, forcedError} from '../errors.js';
+import {SESSION_ID_PATTERN} from '../session-id.js';
 
 const schemaPath = fileURLToPath(
     new URL('../../../contract/external-resources-api.schema.json', import.meta.url)
@@ -744,7 +759,6 @@ addFormats(ajv);
 ajv.addSchema(schema);
 const validateRequest = ajv.getSchema(`${schema.$id}#/$defs/ResultRequest`);
 
-const SESSION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const MAX_DATA_BYTES = 1048576;
 
 const THRESHOLD = 80;
@@ -1533,7 +1547,7 @@ Expected: FAIL — `Cannot find module '.../api/src/demo-lms.js'`
 import {randomUUID} from 'node:crypto';
 import express from 'express';
 
-const SESSION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+import {SESSION_ID_PATTERN} from './session-id.js';
 
 const FORCEABLE = [
     ['', 'no forced error'],
