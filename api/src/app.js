@@ -3,6 +3,7 @@ import express from 'express';
 import {CHECKLIST} from './checklist.js';
 import {buildResultPayload} from './payload.js';
 import {LmsError} from './errors.js';
+import {demoLmsRouter} from './demo-lms.js';
 
 const asyncRoute = handler => (req, res, next) => Promise.resolve(handler(req, res)).catch(next);
 
@@ -27,6 +28,8 @@ export function createApp({config, client}) {
         // Deliberately only the mode. Nothing about the token, not even its presence.
         res.json({mode: config.mode});
     });
+
+    app.use('/demo', demoLmsRouter(config));
 
     app.get('/api/checklist', (req, res) => {
         res.json(CHECKLIST);
