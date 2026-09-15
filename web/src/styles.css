@@ -51,3 +51,4 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 button:disabled { opacity: .5; cursor: not-allowed; }
 
 .muted { color: var(--muted); }
+.failure { border-color: var(--no); }

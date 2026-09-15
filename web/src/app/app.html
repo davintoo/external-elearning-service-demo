@@ -37,5 +37,29 @@
         [actionLabel]="actionLabel()"
         (open)="openChecklist()" />
     }
+
+    @if (screen() === 'checklist') {
+      @if (submitError(); as failure) {
+        <section class="card failure">
+          <h2>The LMS did not accept the result</h2>
+          <p><code>{{ failure.key }}</code> — {{ failure.message }}</p>
+          @if (failure.fields) {
+            <ul>
+              @for (field of failure.fields | keyvalue; track field.key) {
+                <li><code>{{ field.key }}</code>: {{ field.value }}</li>
+              }
+            </ul>
+          }
+          <p class="muted">Your answers are still here. Nothing was lost.</p>
+        </section>
+      }
+
+      <app-checklist-form
+        [checklist]="checklist()!"
+        [session]="current()!"
+        [busy]="busy()"
+        (changed)="saveProgress($event)"
+        (finish)="submit()" />
+    }
   }
 }

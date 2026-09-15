@@ -1,9 +1,11 @@
+import {KeyValuePipe} from '@angular/common';
 import {Component, computed, inject, signal} from '@angular/core';
 
 import {DemoApi} from './core/api';
 import {SessionStore} from './core/session-store';
 import {readLaunch} from './core/launch';
-import {ApiError, Checklist, SessionContext} from './core/types';
+import {ApiError, Checklist, ChecklistValue, SessionContext, SubmitResponse} from './core/types';
+import {ChecklistForm} from './ui/checklist-form';
 import {ContextCard} from './ui/context-card';
 import {SessionsList} from './ui/sessions-list';
 
@@ -11,7 +13,7 @@ type Screen = 'no-session' | 'loading' | 'error' | 'list' | 'checklist' | 'finis
 
 @Component({
   selector: 'app-root',
-  imports: [ContextCard, SessionsList],
+  imports: [ContextCard, SessionsList, ChecklistForm, KeyValuePipe],
   templateUrl: './app.html',
   styleUrl: './app.css'
 })
@@ -80,5 +82,38 @@ export class App {
     }
 
     this.screen.set('checklist');
+  }
+
+  protected readonly submission = signal<SubmitResponse | null>(null);
+  protected readonly busy = signal(false);
+  protected readonly submitError = signal<ApiError | null>(null);
+
+  protected saveProgress(change: {
+    answers: Record<string, ChecklistValue>;
+    comments: Record<string, string>;
+  }): void {
+    this.store.saveProgress(this.launch().sessionId!, change.answers, change.comments);
+  }
+
+  protected async submit(): Promise<void> {
+    const {sessionId, force} = this.launch();
+    const session = this.store.get(sessionId!)!;
+
+    this.busy.set(true);
+    this.submitError.set(null);
+    try {
+      const response = await this.api.submit(
+        sessionId!, session.answers, session.comments, force
+      );
+      this.submission.set(response);
+      this.store.finish(sessionId!, response.received);
+      this.screen.set('finish');
+    } catch (error) {
+      // The answers stay in the store either way — a rejected send must never cost the
+      // learner their work.
+      this.submitError.set(error as ApiError);
+    } finally {
+      this.busy.set(false);
+    }
   }
 }
