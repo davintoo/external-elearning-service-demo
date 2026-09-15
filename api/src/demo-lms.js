@@ -5,6 +5,7 @@ import {SESSION_ID_PATTERN} from './session-id.js';
 
 const FORCEABLE = [
     ['', 'no forced error'],
+    ['400', '400 — payload rejected, per-field'],
     ['401', '401 — token unknown or expired'],
     ['403', '403 — role lacks the permission'],
     ['404', '404 — session not found'],

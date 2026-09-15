@@ -17,8 +17,15 @@
 
   @case ('error') {
     <section class="card">
-      <h1>The LMS could not be reached</h1>
+      <h1>{{ errorHeading() }}</h1>
       <p><code>{{ error()!.key }}</code> — {{ error()!.message }}</p>
+      @if (error()!.fields) {
+        <ul>
+          @for (field of error()!.fields! | keyvalue; track field.key) {
+            <li><code>{{ field.key }}</code>: {{ field.value }}</li>
+          }
+        </ul>
+      }
     </section>
   }
 

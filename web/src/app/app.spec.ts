@@ -2,6 +2,7 @@ import {TestBed} from '@angular/core/testing';
 import {App} from './app';
 import {DemoApi} from './core/api';
 import {SessionStore} from './core/session-store';
+import {ApiError} from './core/types';
 
 describe('App', () => {
   it('explains itself when opened outside an LMS', async () => {
@@ -71,5 +72,77 @@ describe('App submit failure', () => {
     expect(session.answers['c1']).toBe('yes');
     expect(session.comments['c1']).toBe('looked fine');
     expect(session.status).toBe('in-progress');
+  });
+});
+
+describe('App error screen', () => {
+  // Same reason as the block above: the launch url is read once, at construction.
+  afterEach(() => history.replaceState({}, '', '/'));
+
+  const apiFailingContextFetch = (error: ApiError) => ({
+    config: async () => ({mode: 'mock' as const}),
+    checklist: async () => ({title: 'Demo', items: []}),
+    session: async () => {
+      throw error;
+    },
+    submit: async () => {
+      throw new Error('not exercised by this spec');
+    }
+  });
+
+  async function renderWithError(error: ApiError) {
+    history.replaceState({}, '', `/?session_id=${ID}`);
+    await TestBed.configureTestingModule({
+      imports: [App],
+      providers: [{provide: DemoApi, useValue: apiFailingContextFetch(error)}]
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    return fixture;
+  }
+
+  it('does not call a reached-and-answered failure "could not be reached"', async () => {
+    // The LMS was reached and answered 403 — this must read as a rejection, not a network
+    // problem. A spec that still passed with the old hardcoded heading would be worthless,
+    // so this fails outright if that heading text comes back.
+    const fixture = await renderWithError({
+      status: 403, key: 'forbidden', message: 'Permission denied'
+    });
+
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(text).not.toContain('could not be reached');
+    expect(text).toContain('The LMS rejected this session');
+    expect(text).toContain('forbidden');
+    expect(text).toContain('Permission denied');
+  });
+
+  it('reserves "could not be reached" for a genuine transport failure', async () => {
+    const fixture = await renderWithError({
+      status: 502, key: 'lms_unreachable', message: 'Could not reach the LMS'
+    });
+
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(text).toContain('The LMS could not be reached');
+  });
+
+  it('also calls it unreachable when the demo server itself cannot be reached', async () => {
+    const fixture = await renderWithError({
+      status: 0, key: 'demo_unreachable', message: 'Could not reach the demo server'
+    });
+
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(text).toContain('The LMS could not be reached');
+  });
+
+  it('renders per-field messages on the error screen when the LMS returns them', async () => {
+    const fixture = await renderWithError({
+      status: 400, key: 'validation_error', message: 'The LMS rejected the payload',
+      fields: {mark: '"mark" must be less than or equal to 100'}
+    });
+
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(text).toContain('mark');
+    expect(text).toContain('must be less than or equal to 100');
   });
 });

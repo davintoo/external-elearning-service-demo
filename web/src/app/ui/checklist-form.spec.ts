@@ -76,6 +76,16 @@ describe('ChecklistForm', () => {
     expect(completeButton.disabled).toBe(false);
   });
 
+  it('keeps Finish disabled while busy, even when every item is answered', async () => {
+    // Complete answers alone must not be enough — busy is what prevents a double submit
+    // while the first send is still in flight.
+    const fixture = await render({a: 'yes', b: 'yes', c: 'na'}, true);
+    const button = fixture.nativeElement.querySelector('button.primary') as HTMLButtonElement;
+
+    expect(button.disabled).toBe(true);
+    expect(button.textContent).toContain('Sending');
+  });
+
   it('emits the current answers on the changed output when one is set', async () => {
     const fixture = await render({a: 'yes'});
     let emitted: {answers: Record<string, ChecklistValue>; comments: Record<string, string>} | undefined;

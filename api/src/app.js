@@ -72,7 +72,7 @@ export function createApp({config, client, webDist = null}) {
     // and the simulator share one origin and 'self' is a sufficient frame-ancestors policy.
     if (webDist) {
         app.use(express.static(webDist));
-        app.get(/^\/(?!api\/|demo\/).*/, (req, res) => {
+        app.get(/^\/(?!api(\/|$)|demo(\/|$)).*/, (req, res) => {
             res.sendFile('index.html', {root: webDist});
         });
     }
@@ -81,6 +81,19 @@ export function createApp({config, client, webDist = null}) {
     app.use((error, req, res, next) => {
         if (error instanceof LmsError) {
             return res.status(error.status).json({error: error.toJSON()});
+        }
+
+        // express.json() raises a bad body as a plain error, not an LmsError. A reference
+        // implementation should answer these as ordinary request errors, not as our own 500.
+        if (error.type === 'entity.parse.failed') {
+            return res.status(400).json({
+                error: {status: 400, key: 'invalid_json', message: 'Request body is not valid JSON'}
+            });
+        }
+        if (error.type === 'entity.too.large') {
+            return res.status(413).json({
+                error: {status: 413, key: 'payload_too_large', message: 'Request body is too large'}
+            });
         }
 
         console.error(error);

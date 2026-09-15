@@ -27,11 +27,15 @@ export class LiveLmsClient {
             response = await this.fetchImpl(`${this.baseUrl}${path}`, {
                 ...init,
                 headers: {
+                    // Caller-supplied headers are spread FIRST so they can never override the
+                    // defaults below. If they were spread last, any caller passing its own
+                    // `init.headers` (even by accident, e.g. forwarding an unrelated header)
+                    // could clobber the auth token or content type sent to the LMS.
+                    ...(init.headers || {}),
                     // The API token goes in its own header, never in Authorization, and never
                     // anywhere the browser can see it.
                     'x-cbr-authorization': `Bearer ${this.token}`,
-                    'content-type': 'application/json; charset=utf-8',
-                    ...(init.headers || {})
+                    'content-type': 'application/json; charset=utf-8'
                 }
             });
         } catch (cause) {

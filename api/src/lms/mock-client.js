@@ -79,9 +79,8 @@ function describeData(data) {
  * accepts. A mock that merely says yes would teach integrators the wrong contract.
  */
 export class MockLmsClient {
-    constructor({now = () => new Date()} = {}) {
+    constructor() {
         this.mode = 'mock';
-        this.now = now;
         this.sessions = new Map();
     }
 
@@ -105,8 +104,8 @@ export class MockLmsClient {
                 status: 'started',
                 mark: null,
                 attempt_number: 1,
-                started_at: this.now().toISOString(),
-                updated_at: this.now().toISOString(),
+                started_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
                 data: null
             };
             this.sessions.set(sessionId, session);
@@ -207,7 +206,7 @@ export class MockLmsClient {
         session.status = status;
         session.mark = mark === undefined ? null : mark;
         session.data = payload.data || session.data;
-        session.updated_at = this.now().toISOString();
+        session.updated_at = new Date().toISOString();
 
         return {
             data: {

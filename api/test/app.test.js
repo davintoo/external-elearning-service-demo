@@ -179,6 +179,20 @@ test('an unexpected error never leaks its internals to the browser', async () =>
     }, {client: explodingClient});
 });
 
+test('a malformed JSON body is a 400, not a leaked 500', async () => {
+    await withServer(async base => {
+        const res = await fetch(`${base}/api/session/${SESSION_ID}/result`, {
+            method: 'POST',
+            headers: {'content-type': 'application/json'},
+            body: '{not valid json'
+        });
+        const body = await res.json();
+
+        assert.equal(res.status, 400);
+        assert.equal(body.error.key, 'invalid_json');
+    });
+});
+
 test('serves the built web app and falls back to index.html for the launch url', async () => {
     const dist = mkdtempSync(join(tmpdir(), 'demo-web-'));
     writeFileSync(join(dist, 'index.html'), '<!doctype html><title>simulator</title>');
@@ -205,6 +219,12 @@ test('serves the built web app and falls back to index.html for the launch url',
         const unrouted = await fetch(`${base}/api/nonexistent`);
         assert.equal(unrouted.status, 404);
         assert.equal((await unrouted.text()).includes('simulator'), false);
+
+        // The bare segment, with no trailing slash, must be excluded too - a regex written
+        // as `api\/` (requiring the slash) lets `/api` itself fall through to the shell.
+        const bareApi = await fetch(`${base}/api`);
+        assert.equal(bareApi.status, 404);
+        assert.equal((await bareApi.text()).includes('simulator'), false);
     } finally {
         server.close();
     }

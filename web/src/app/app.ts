@@ -29,6 +29,19 @@ export class App {
   protected readonly error = signal<ApiError | null>(null);
   protected readonly screen = signal<Screen>('no-session');
 
+  /**
+   * Only a genuine transport failure — the demo server itself unreachable, or the LMS
+   * unreachable behind it — reads as "could not be reached". Every other key means the LMS
+   * was reached and answered (401/403/404/409/410/429 and friends), so those get a neutral
+   * heading rather than being misdiagnosed as a network problem.
+   */
+  protected readonly errorHeading = computed(() => {
+    const key = this.error()?.key;
+    return key === 'demo_unreachable' || key === 'lms_unreachable'
+      ? 'The LMS could not be reached'
+      : 'The LMS rejected this session';
+  });
+
   protected readonly current = computed(() => {
     const sessionId = this.launch().sessionId;
     return sessionId ? this.store.sessions().find(s => s.sessionId === sessionId) ?? null : null;
