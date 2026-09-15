@@ -1,0 +1,13 @@
+@if (!launch().sessionId) {
+  <section class="card notice">
+    <h1>Launch this from the LMS</h1>
+    <p>
+      This page is an external learning resource. The LMS opens it in an iframe with a
+      <code>session_id</code> on the URL — that UUID is the only thing it hands over, and
+      without it there is no learner to report a result for.
+    </p>
+    <p><a href="/demo/lms">Open the mock LMS task page</a></p>
+  </section>
+} @else {
+  <p class="card">Session {{ launch().sessionId }}</p>
+}
