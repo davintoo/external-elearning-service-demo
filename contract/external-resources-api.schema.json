@@ -1,0 +1,508 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://collaborator.pro/schemas/external-resources/v1.json",
+  "title": "LMS External Resources API v1",
+  "description": "Payload schemas for the 'Receive data from an external resource' integration. An external learning resource or simulator reports session results back to the LMS. Validate request bodies against #/$defs/ResultRequest and responses against #/$defs/ResultResponse or #/$defs/SessionContextResponse. All requests carry the header 'x-cbr-authorization: Bearer <api-token>' and are sent to the client's own LMS hostname, which identifies the tenant.",
+
+  "$defs": {
+
+    "SessionId": {
+      "title": "Session identifier",
+      "description": "UUID v4 minted by the LMS when the learner opens the resource, delivered to the external service as the 'session_id' query parameter on the launch URL. It is the correlation key and the idempotency key for every call.",
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "examples": ["b3f1c9e2-4a17-4c0e-9f31-8a2d5e77b101"]
+    },
+
+    "IncomingStatus": {
+      "title": "Reported session status",
+      "description": "SCORM status vocabulary. The LMS translates it: 'passed'/'completed' -> finished, 'failed' -> fail, 'incomplete' -> inprogress, 'not attempted' -> started, 'browsed' -> leaves the stored status unchanged. When the task defines a threshold, a terminal status is re-evaluated against the mark and may come back as the opposite verdict.",
+      "type": "string",
+      "enum": ["passed", "completed", "failed", "incomplete", "browsed", "not attempted"]
+    },
+
+    "SessionStatus": {
+      "title": "LMS-side session status",
+      "description": "The status the LMS stored for this session after applying threshold and result-mode rules. Returned, never sent.",
+      "type": "string",
+      "enum": ["started", "inprogress", "finished", "verification", "fail"]
+    },
+
+    "TaskStatus": {
+      "title": "LMS-side task status",
+      "description": "The learner's status on the task after this session was rolled up across attempts. Returned, never sent.",
+      "type": "string",
+      "enum": ["not started", "not_assigned", "started", "inprogress", "finished", "verification", "fail"]
+    },
+
+    "Mark": {
+      "title": "Mark",
+      "description": "Result as a percentage, 0 to 100. Send an already-normalised value: if the external system scores out of something other than 100, compute round(raw * 100 / (max - min)) before sending. Omit the field or send null to leave the stored mark untouched.",
+      "type": ["number", "null"],
+      "minimum": 0,
+      "maximum": 100,
+      "examples": [87]
+    },
+
+    "ResultRequest": {
+      "title": "POST /api/v2/external-resources/sessions/result — request body",
+      "description": "Creates or updates the result of one session. Re-sending the same session_id updates the stored result, including for a session that already reached a terminal status. Re-sending an identical body is a no-op. The 'data' field replaces the stored payload wholesale and is never merged.",
+      "type": "object",
+      "required": ["session_id", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "session_id": { "$ref": "#/$defs/SessionId" },
+        "status": { "$ref": "#/$defs/IncomingStatus" },
+        "mark": { "$ref": "#/$defs/Mark" },
+        "data": { "$ref": "#/$defs/SessionData" }
+      },
+      "examples": [
+        {
+          "session_id": "b3f1c9e2-4a17-4c0e-9f31-8a2d5e77b101",
+          "status": "completed",
+          "mark": 87,
+          "data": {
+            "format": "quiz",
+            "title": "Valve operation, module 3",
+            "items": [
+              {
+                "id": "q1",
+                "order": 1,
+                "type": "single",
+                "text": "Which valve is opened first?",
+                "answers": ["B"],
+                "correct_answers": ["C"],
+                "is_correct": false,
+                "weight": 2,
+                "score": 0
+              },
+              {
+                "id": "q2",
+                "order": 2,
+                "type": "multiple",
+                "text": "Which readings must be logged before start-up?",
+                "answers": ["Pressure", "Temperature"],
+                "correct_answers": ["Pressure", "Temperature"],
+                "is_correct": true,
+                "weight": 2,
+                "score": 2
+              }
+            ]
+          }
+        },
+        {
+          "session_id": "0f5a1d44-9c7b-4a2e-8d10-5b6c3f2e9a77",
+          "status": "failed",
+          "mark": 45,
+          "data": {
+            "format": "checklist",
+            "items": [
+              {
+                "id": "c1",
+                "order": 1,
+                "group": "Preparation",
+                "text": "PPE checked",
+                "value": "yes",
+                "weight": 1,
+                "score": 1
+              },
+              {
+                "id": "c2",
+                "order": 2,
+                "group": "Preparation",
+                "text": "Work area cordoned off",
+                "value": "no",
+                "weight": 1,
+                "score": 0,
+                "comment": "Tape missing on the north side"
+              },
+              {
+                "id": "c3",
+                "order": 3,
+                "group": "Shutdown",
+                "text": "Residual pressure released",
+                "value": "na",
+                "weight": 1
+              }
+            ]
+          }
+        }
+      ]
+    },
+
+    "SessionData": {
+      "title": "Session data",
+      "description": "What the learner actually did, in one of two shapes. The 'format' field selects the shape and decides how the LMS report renders the session. Serialised size must not exceed 1 MB.",
+      "type": "object",
+      "oneOf": [
+        { "$ref": "#/$defs/QuizData" },
+        { "$ref": "#/$defs/ChecklistData" }
+      ]
+    },
+
+    "QuizData": {
+      "title": "Session data — quiz",
+      "description": "Rendered in the report as a list of questions with the learner's answer and, when supplied, the correct answer.",
+      "type": "object",
+      "required": ["format", "items"],
+      "additionalProperties": false,
+      "properties": {
+        "format": { "const": "quiz" },
+        "title": {
+          "description": "Optional heading for the session details page.",
+          "type": "string",
+          "maxLength": 255
+        },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1000,
+          "items": { "$ref": "#/$defs/QuizItem" }
+        },
+        "meta": { "$ref": "#/$defs/Meta" }
+      }
+    },
+
+    "ChecklistData": {
+      "title": "Session data — checklist",
+      "description": "Rendered in the report as criteria grouped by 'group', each with a yes/no/n-a indicator.",
+      "type": "object",
+      "required": ["format", "items"],
+      "additionalProperties": false,
+      "properties": {
+        "format": { "const": "checklist" },
+        "title": {
+          "description": "Optional heading for the session details page.",
+          "type": "string",
+          "maxLength": 255
+        },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1000,
+          "items": { "$ref": "#/$defs/ChecklistItem" }
+        },
+        "meta": { "$ref": "#/$defs/Meta" }
+      }
+    },
+
+    "QuizItem": {
+      "title": "Quiz item",
+      "type": "object",
+      "required": ["id", "text"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "Stable identifier of the question in the external system. Must stay the same across sessions so the same question is recognisable between attempts.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "order": {
+          "description": "Display position. Defaults to the item's index in the array plus one.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "type": {
+          "description": "Question kind. Defaults to 'other'.",
+          "type": "string",
+          "enum": ["single", "multiple", "text", "match", "order", "numeric", "other"],
+          "default": "other"
+        },
+        "text": {
+          "description": "Question wording. Basic HTML is allowed and is sanitised by the LMS before storage.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "answers": {
+          "description": "What the learner gave. One entry per selected option, or a single entry for free-text and numeric answers.",
+          "type": "array",
+          "maxItems": 100,
+          "items": { "type": "string", "maxLength": 4000 }
+        },
+        "correct_answers": {
+          "description": "Optional. Omit it if the external system does not disclose correct answers; the report then shows only the learner's answer together with 'is_correct'.",
+          "type": "array",
+          "maxItems": 100,
+          "items": { "type": "string", "maxLength": 4000 }
+        },
+        "is_correct": {
+          "description": "Whether the learner's answer was accepted. Supply it whenever 'correct_answers' is omitted, otherwise the report cannot show a verdict.",
+          "type": "boolean"
+        },
+        "weight": {
+          "description": "Relative weight of the question. Defaults to 1.",
+          "type": "number",
+          "minimum": 0,
+          "default": 1
+        },
+        "score": {
+          "description": "Points scored on this question. Informational only: the session mark comes from the top-level 'mark' field, never from summing these.",
+          "type": "number",
+          "minimum": 0
+        },
+        "comment": {
+          "description": "Free-text feedback shown under the question.",
+          "type": "string",
+          "maxLength": 4000
+        }
+      }
+    },
+
+    "ChecklistItem": {
+      "title": "Checklist item",
+      "type": "object",
+      "required": ["id", "text", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "Stable identifier of the criterion in the external system.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "order": {
+          "description": "Display position. Defaults to the item's index in the array plus one.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "group": {
+          "description": "Section heading. Items sharing a value are rendered under one group, in first-appearance order.",
+          "type": "string",
+          "maxLength": 255
+        },
+        "text": {
+          "description": "The criterion being assessed. Basic HTML is allowed and is sanitised by the LMS before storage.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "value": {
+          "description": "Assessment of the criterion: 'yes' met, 'no' not met, 'na' not applicable to this run.",
+          "type": "string",
+          "enum": ["yes", "no", "na"]
+        },
+        "score": {
+          "description": "Points scored on this criterion. Informational only: the session mark comes from the top-level 'mark' field.",
+          "type": "number",
+          "minimum": 0
+        },
+        "weight": {
+          "description": "Relative weight of the criterion. Defaults to 1.",
+          "type": "number",
+          "minimum": 0,
+          "default": 1
+        },
+        "comment": {
+          "description": "Free-text note shown under the criterion.",
+          "type": "string",
+          "maxLength": 4000
+        }
+      }
+    },
+
+    "Meta": {
+      "title": "Free-form metadata",
+      "description": "Anything the external system wants preserved that does not fit the item schema. Stored verbatim and shown in the report as a collapsed raw JSON block. Never interpreted by the LMS. Do not put personal data here.",
+      "type": "object"
+    },
+
+    "ResultResponse": {
+      "title": "POST /api/v2/external-resources/sessions/result — 200 response",
+      "description": "The state after the LMS applied the result. 'status' and 'mark' may differ from what was sent: a 'completed' below the task threshold comes back as 'fail', and a resource configured to award full marks on completion comes back as 100.",
+      "type": "object",
+      "required": ["data"],
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "type": "object",
+          "required": ["session_id", "attempt_number", "status", "mark", "task_status", "updated_at"],
+          "additionalProperties": false,
+          "properties": {
+            "session_id": { "$ref": "#/$defs/SessionId" },
+            "attempt_number": {
+              "description": "Which attempt at the task this session is.",
+              "type": "integer",
+              "minimum": 1
+            },
+            "status": { "$ref": "#/$defs/SessionStatus" },
+            "mark": {
+              "type": ["number", "null"],
+              "minimum": 0,
+              "maximum": 100
+            },
+            "threshold": {
+              "description": "Pass mark configured on the task, 0 when none is set.",
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "task_status": { "$ref": "#/$defs/TaskStatus" },
+            "task_mark": {
+              "description": "The learner's mark on the task after rolling this session up across attempts. Depending on the task's result mode this is either the latest attempt or the best one, so it can differ from 'mark'.",
+              "type": ["number", "null"],
+              "minimum": 0,
+              "maximum": 100
+            },
+            "updated_at": {
+              "description": "When the LMS stored this result. ISO 8601, UTC.",
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        }
+      },
+      "examples": [
+        {
+          "data": {
+            "session_id": "b3f1c9e2-4a17-4c0e-9f31-8a2d5e77b101",
+            "attempt_number": 2,
+            "status": "finished",
+            "mark": 87,
+            "threshold": 80,
+            "task_status": "finished",
+            "task_mark": 87,
+            "updated_at": "2026-09-08T10:22:31Z"
+          }
+        }
+      ]
+    },
+
+    "SessionContextResponse": {
+      "title": "GET /api/v2/external-resources/sessions/{session_id} — 200 response",
+      "description": "Launch context for a session. Lets the external service personalise its UI without any learner data travelling in a URL. Server-to-server only.",
+      "type": "object",
+      "required": ["data"],
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "type": "object",
+          "required": ["session_id", "user", "resource_id", "task_id", "attempt_number", "status", "started_at"],
+          "additionalProperties": false,
+          "properties": {
+            "session_id": { "$ref": "#/$defs/SessionId" },
+            "user": {
+              "type": "object",
+              "required": ["id", "name", "login", "lang"],
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "description": "Internal LMS user id.",
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "name": {
+                  "description": "Display name, for greeting the learner.",
+                  "type": "string"
+                },
+                "login": {
+                  "description": "LMS login of the learner.",
+                  "type": "string"
+                },
+                "lang": {
+                  "description": "The learner's interface language as a two-letter code, for localising the external UI.",
+                  "type": "string",
+                  "minLength": 2,
+                  "maxLength": 5,
+                  "examples": ["uk", "en"]
+                }
+              }
+            },
+            "resource_id": { "type": "integer", "minimum": 1 },
+            "task_id": { "type": "integer", "minimum": 1 },
+            "attempt_number": { "type": "integer", "minimum": 1 },
+            "attempts_limit": {
+              "description": "Maximum attempts allowed on the task, null when unlimited.",
+              "type": ["integer", "null"],
+              "minimum": 1
+            },
+            "threshold": {
+              "description": "Pass mark configured on the task, 0 when none is set.",
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "status": { "$ref": "#/$defs/SessionStatus" },
+            "mark": {
+              "type": ["number", "null"],
+              "minimum": 0,
+              "maximum": 100
+            },
+            "started_at": {
+              "description": "When the LMS opened this session. ISO 8601, UTC.",
+              "type": "string",
+              "format": "date-time"
+            },
+            "expires_at": {
+              "description": "Task deadline or end of the time limit, after which results are rejected with 410. Null when the task has no deadline. ISO 8601, UTC.",
+              "type": ["string", "null"],
+              "format": "date-time"
+            }
+          }
+        }
+      },
+      "examples": [
+        {
+          "data": {
+            "session_id": "b3f1c9e2-4a17-4c0e-9f31-8a2d5e77b101",
+            "user": { "id": 482, "name": "Ivan Petrenko", "login": "i.petrenko", "lang": "uk" },
+            "resource_id": 512,
+            "task_id": 9137,
+            "attempt_number": 2,
+            "attempts_limit": 3,
+            "threshold": 80,
+            "status": "inprogress",
+            "mark": null,
+            "started_at": "2026-09-08T09:14:02Z",
+            "expires_at": "2026-09-15T20:59:59Z"
+          }
+        }
+      ]
+    },
+
+    "ValidationErrorResponse": {
+      "title": "400 response",
+      "description": "One entry per rejected field, keyed by the top-level field name. Returned when the body fails schema validation.",
+      "type": "object",
+      "required": ["data"],
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      },
+      "examples": [
+        {
+          "data": {
+            "session_id": "\"session_id\" must be a valid GUID",
+            "mark": "\"mark\" must be less than or equal to 100"
+          }
+        }
+      ]
+    },
+
+    "ErrorResponse": {
+      "title": "401 / 403 / 404 / 409 / 410 / 429 response",
+      "description": "A single machine-readable key with a human-readable message. The key identifies the condition: 'unauthorized' (missing, malformed, unknown or expired API token), 'forbidden' (the token's role lacks pages.can_send_external_resource_data), 'not_found' (unknown session id, a session belonging to another site, or a deleted one), 'resource_not_external' (the resource no longer has the option enabled), 'session_expired' (the task deadline or time limit has passed), 'too_many_requests' (rate limited; retry after the interval in the Retry-After header).",
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "unauthorized": { "type": "string" },
+        "forbidden": { "type": "string" },
+        "not_found": { "type": "string" },
+        "resource_not_external": { "type": "string" },
+        "session_expired": { "type": "string" },
+        "too_many_requests": { "type": "string" }
+      },
+      "examples": [
+        { "not_found": "Session \"b3f1c9e2-4a17-4c0e-9f31-8a2d5e77b101\" not found" },
+        { "session_expired": "Task deadline has passed" }
+      ]
+    }
+  }
+}

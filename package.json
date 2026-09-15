@@ -1,0 +1,11 @@
+{
+  "name": "external-elearning-service-demo",
+  "private": true,
+  "type": "module",
+  "workspaces": ["api", "web"],
+  "scripts": {
+    "dev": "npm run dev --workspace=api & npm start --workspace=web",
+    "start": "npm run build --workspace=web && npm start --workspace=api",
+    "test": "npm test --workspace=api"
+  }
+}
