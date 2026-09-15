@@ -85,6 +85,36 @@ test('the mock refuses every payload the LMS refuses', async () => {
     await rejects({data: {format: 'checklist', items: [{id: 'c1', value: 'yes'}]}});
 });
 
+test('a rejection names the field at fault, which is the only reason to develop against a mock', async () => {
+    const client = new MockLmsClient();
+    const fieldsOf = async over => {
+        try {
+            await client.saveResult(payload(over));
+        } catch (error) {
+            return error.fields;
+        }
+        throw new Error('expected the payload to be rejected');
+    };
+
+    // A missing required property is the case ajv reports with an empty instancePath.
+    const {session_id: _drop, ...noSessionId} = payload();
+    let fields;
+    try {
+        await client.saveResult(noSessionId);
+        throw new Error('expected the payload to be rejected');
+    } catch (error) {
+        fields = error.fields;
+    }
+    assert.ok(fields.session_id, `expected a session_id message, got ${JSON.stringify(fields)}`);
+    assert.equal('body' in fields, false);
+
+    assert.ok((await fieldsOf({mark: 101})).mark);
+    // A fault inside the payload is filed under its top-level field, per the contract.
+    assert.ok((await fieldsOf({
+        data: {format: 'checklist', items: [{id: 'c1', value: 'yes'}]}
+    })).data);
+});
+
 test('an oversized payload is refused with the same 1 MB rule the LMS applies', async () => {
     const client = new MockLmsClient();
     const items = Array.from({length: 400}, (_, i) => ({

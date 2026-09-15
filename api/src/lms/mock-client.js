@@ -98,8 +98,19 @@ export class MockLmsClient {
         if (!validateRequest(payload)) {
             const fields = {};
             for (const error of validateRequest.errors) {
-                const field = (error.instancePath || '/body').split('/').filter(Boolean)[0] || 'body';
-                fields[field] = `${error.instancePath || 'body'} ${error.message}`;
+                // The contract keys each message by the TOP-LEVEL field name. Ajv reports a
+                // missing required property with an empty instancePath and the name in
+                // params, so keying off instancePath alone would file "session_id is
+                // missing" under "body" - useless to the integrator trying to fix it.
+                const path = (error.instancePath || '').split('/').filter(Boolean);
+                const field = path[0] ||
+                    error.params?.missingProperty ||
+                    error.params?.additionalProperty ||
+                    'body';
+
+                fields[field] = error.instancePath
+                    ? `"${field}" ${error.message}`
+                    : error.message;
             }
             throw new LmsError(400, 'validation_error', 'The LMS rejected the payload', fields);
         }
