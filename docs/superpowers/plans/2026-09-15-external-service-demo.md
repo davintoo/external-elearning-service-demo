@@ -689,6 +689,23 @@ test('a rejection names the field at fault, which is the only reason to develop 
     });
     assert.match(dataFields.data, /text/, dataFields.data);
     assert.equal(/oneOf/.test(dataFields.data), false, dataFields.data);
+
+    // The branch is selected by `format`, never guessed from the shape of ajv's output.
+    // Both of these are ordinary mistakes, and both used to be answered by blaming a
+    // `format` that was correct - the wrong branch's complaint about its own discriminator.
+    for (const format of ['quiz', 'checklist']) {
+        const emptyItems = await fieldsOf({data: {format, items: []}});
+        assert.match(emptyItems.data, /items/, emptyItems.data);
+        assert.equal(/format/.test(emptyItems.data), false, emptyItems.data);
+
+        const noItems = await fieldsOf({data: {format}});
+        assert.match(noItems.data, /items/, noItems.data);
+        assert.equal(/format/.test(noItems.data), false, noItems.data);
+    }
+
+    // An unrecognised format is the one case where `format` really is the fault.
+    const badFormat = await fieldsOf({data: {format: 'banana', items: []}});
+    assert.match(badFormat.data, /format/, badFormat.data);
 });
 
 test('an oversized payload is refused with the same 1 MB rule the LMS applies', async () => {
@@ -815,6 +832,52 @@ const MAX_DATA_BYTES = 1048576;
 const THRESHOLD = 80;
 const ATTEMPTS_LIMIT = 3;
 
+const DATA_BRANCHES = {quiz: 'QuizData', checklist: 'ChecklistData'};
+
+/**
+ * Renders one ajv error the way the contract's ValidationErrorResponse examples read: the
+ * offending path in quotes, then the reason. ajv's additionalProperties message never names
+ * the property it objected to, so it is spliced back in.
+ */
+function describeError(error, pathPrefix = '') {
+    const detail = error.params?.additionalProperty
+        ? `${error.message} ("${error.params.additionalProperty}")`
+        : error.message;
+    const path = `${pathPrefix}${error.instancePath}`.slice(1).replace(/\//g, '.');
+
+    return path ? `"${path}" ${detail}` : detail;
+}
+
+/**
+ * `data` is a oneOf, and ajv reports BOTH branches' failures plus a generic "must match
+ * exactly one schema in oneOf" - none of which say which branch the sender meant. Ranking
+ * those raw errors to guess the intended branch is unreliable: for an empty or missing
+ * `items` the wrong branch's `format` complaint outranks the right branch's real one, and
+ * the sender gets blamed for a `format` that was correct.
+ *
+ * The schema carries its own discriminator, so use it. Validate against the branch `format`
+ * names and report that branch's first error. Nothing is inferred.
+ */
+function describeData(data) {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+        return '"data" must be an object';
+    }
+
+    const branch = DATA_BRANCHES[data.format];
+    if (!branch) {
+        return `"data.format" must be one of: ${Object.keys(DATA_BRANCHES).join(', ')}`;
+    }
+
+    const validateBranch = ajv.getSchema(`${schema.$id}#/$defs/${branch}`);
+    if (validateBranch(data)) {
+        // The oneOf failed but the named branch passes - only reachable if the branches
+        // stop being mutually exclusive, which their `format` consts currently prevent.
+        return '"data" must match exactly one of the quiz or checklist shapes';
+    }
+
+    return describeError(validateBranch.errors[0], '/data');
+}
+
 /**
  * A stand-in for cbr-api2 that enforces what cbr-api2 enforces.
  *
@@ -890,20 +953,12 @@ export class MockLmsClient {
         }
 
         if (!validateRequest(payload)) {
-            // One entry per rejected field, keyed by the TOP-LEVEL field name, carrying the
-            // most specific reason available. Both halves take work:
-            //
-            // The key: ajv reports a missing required property with an empty instancePath
-            // and the name in params, so keying off instancePath alone files "session_id is
-            // missing" under "body" - useless to the integrator trying to fix it.
-            //
-            // The message: `data` is a oneOf, so ajv reports failures from BOTH branches
-            // plus a generic "must match exactly one schema in oneOf". The branch actually
-            // meant fails deepest - at the offending item - while the wrong branch fails
-            // shallowly on its `format` discriminator. So the deepest error is both the most
-            // specific and the one from the right branch, and the generic oneOf sentence,
-            // which names nothing, may only win when there is nothing else.
-            const best = new Map();
+            // One entry per rejected field, keyed by the TOP-LEVEL field name. ajv reports a
+            // missing required property with an empty instancePath and the name in params,
+            // so keying off instancePath alone files "session_id is missing" under "body" -
+            // useless to the integrator trying to fix it.
+            const fields = {};
+            let dataRejected = false;
 
             for (const error of validateRequest.errors) {
                 const path = (error.instancePath || '').split('/').filter(Boolean);
@@ -912,18 +967,18 @@ export class MockLmsClient {
                     error.params?.additionalProperty ||
                     'body';
 
-                const rank = error.keyword === 'oneOf' ? -1 : path.length;
-                const chosen = best.get(field);
-                if (!chosen || rank > chosen.rank) {
-                    best.set(field, {rank, error});
+                // `data` is answered by describeData, against the branch its own `format`
+                // names, because the raw oneOf errors cannot say which branch was meant.
+                if (field === 'data') {
+                    dataRejected = true;
+                    continue;
                 }
+
+                fields[field] = describeError(error);
             }
 
-            const fields = {};
-            for (const [field, {error}] of best) {
-                fields[field] = error.instancePath
-                    ? `"${error.instancePath.slice(1).replace(/\//g, '.')}" ${error.message}`
-                    : error.message;
+            if (dataRejected) {
+                fields.data = describeData(payload.data);
             }
 
             throw new LmsError(400, 'validation_error', 'The LMS rejected the payload', fields);
