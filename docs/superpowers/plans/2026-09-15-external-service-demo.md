@@ -1719,6 +1719,21 @@ test('a hostile force value cannot break out of the iframe src', async () => {
     });
 });
 
+test('an injected query separator cannot add parameters to the launch url', async () => {
+    await withServer(async base => {
+        const id = 'b3f1c9e2-4a17-4c0e-9f31-8a2d5e77b101';
+        const hostile = '410&session_id=evil';
+        const html = await (await fetch(
+            `${base}/demo/lms?session_id=${id}&force=${encodeURIComponent(hostile)}`
+        )).text();
+
+        // HTML-escaping alone would leave "&amp;", which the browser decodes back into a
+        // live separator. The value has to be URL-encoded before it joins the query string.
+        assert.match(html, /force=410%26session_id%3Devil/, html);
+        assert.equal(html.includes('&amp;session_id=evil'), false, html);
+    });
+});
+
 test('the host page is not served in live mode', async () => {
     await withServer(async base => {
         assert.equal((await fetch(`${base}/demo/lms`)).status, 404);
@@ -1751,16 +1766,28 @@ const FORCEABLE = [
     ['429', '429 — rate limited']
 ];
 
+// Escapes `'` as well as `"`, so the helper stays correct if an attribute is ever written
+// single-quoted. Leaving it out makes "every attribute here is double-quoted" an unwritten
+// invariant that a later edit can silently break.
 const escapeHtml = value => String(value)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 
 function renderPage({sessionId, force}) {
-    const iframeSrc = escapeHtml(`/?session_id=${sessionId}${force ? `&force=${force}` : ''}`);
+    // Two different escapes, applied in the right order and for different reasons.
+    // encodeURIComponent stops a value adding or terminating query syntax; escapeHtml stops
+    // the finished URL breaking out of the attribute. HTML-escaping alone is not enough:
+    // it turns an injected "&" into "&amp;", which the browser decodes straight back into a
+    // live query separator, letting an attacker append parameters to the launch URL.
+    const query = (id, code) => `/?session_id=${encodeURIComponent(id)}` +
+        (code ? `&force=${encodeURIComponent(code)}` : '');
+
+    const iframeSrc = escapeHtml(query(sessionId, force));
     const options = FORCEABLE.map(([code, label]) => {
-        const href = escapeHtml(`/demo/lms?session_id=${sessionId}${code ? `&force=${code}` : ''}`);
+        const href = escapeHtml(`/demo/lms${query(sessionId, code).slice(1)}`);
         const current = (force || '') === code ? ' aria-current="true"' : '';
         return `<li><a href="${href}"${current}>${escapeHtml(label)}</a></li>`;
     }).join('');
