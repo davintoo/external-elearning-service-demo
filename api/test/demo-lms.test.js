@@ -88,6 +88,21 @@ test('a hostile force value cannot break out of the iframe src', async () => {
     });
 });
 
+test('an injected query separator cannot add parameters to the launch url', async () => {
+    await withServer(async base => {
+        const id = 'b3f1c9e2-4a17-4c0e-9f31-8a2d5e77b101';
+        const hostile = '410&session_id=evil';
+        const html = await (await fetch(
+            `${base}/demo/lms?session_id=${id}&force=${encodeURIComponent(hostile)}`
+        )).text();
+
+        // HTML-escaping alone would leave "&amp;", which the browser decodes back into a
+        // live separator. The value has to be URL-encoded before it joins the query string.
+        assert.match(html, /force=410%26session_id%3Devil/, html);
+        assert.equal(html.includes('&amp;session_id=evil'), false, html);
+    });
+});
+
 test('the host page is not served in live mode', async () => {
     await withServer(async base => {
         assert.equal((await fetch(`${base}/demo/lms`)).status, 404);

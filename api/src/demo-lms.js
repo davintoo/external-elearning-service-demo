@@ -13,16 +13,28 @@ const FORCEABLE = [
     ['429', '429 — rate limited']
 ];
 
+// Escapes `'` as well as `"`, so the helper stays correct if an attribute is ever written
+// single-quoted. Leaving it out makes "every attribute here is double-quoted" an unwritten
+// invariant that a later edit can silently break.
 const escapeHtml = value => String(value)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 
 function renderPage({sessionId, force}) {
-    const iframeSrc = escapeHtml(`/?session_id=${sessionId}${force ? `&force=${force}` : ''}`);
+    // Two different escapes, applied in the right order and for different reasons.
+    // encodeURIComponent stops a value adding or terminating query syntax; escapeHtml stops
+    // the finished URL breaking out of the attribute. HTML-escaping alone is not enough:
+    // it turns an injected "&" into "&amp;", which the browser decodes straight back into a
+    // live query separator, letting an attacker append parameters to the launch URL.
+    const query = (id, code) => `/?session_id=${encodeURIComponent(id)}` +
+        (code ? `&force=${encodeURIComponent(code)}` : '');
+
+    const iframeSrc = escapeHtml(query(sessionId, force));
     const options = FORCEABLE.map(([code, label]) => {
-        const href = escapeHtml(`/demo/lms?session_id=${sessionId}${code ? `&force=${code}` : ''}`);
+        const href = escapeHtml(`/demo/lms${query(sessionId, code).slice(1)}`);
         const current = (force || '') === code ? ' aria-current="true"' : '';
         return `<li><a href="${href}"${current}>${escapeHtml(label)}</a></li>`;
     }).join('');
