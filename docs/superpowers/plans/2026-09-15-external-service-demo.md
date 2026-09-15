@@ -2333,6 +2333,11 @@ warnings are normal:
 "include": ["src/**/*.d.ts", "src/**/*.spec.ts", "src/test-setup.ts"]
 ```
 
+And keep it **out** of `web/tsconfig.app.json`, which compiles the application. The setup file
+references `afterEach` and `vi`, so if the app build sees it, `ng build` and `ng serve` fail
+with `Cannot find name 'afterEach'`. Tests still pass, which is exactly why this is easy to
+miss: run `npm run build --workspace=web` after touching tsconfig, not just the suite.
+
 **Interfaces:**
 - Consumes: `StoredSession`, `ChecklistValue`, `ResultResponse` from `core/types.ts`.
 - Produces: `SessionStore` (`providedIn: 'root'`) with
