@@ -79,7 +79,7 @@ Verify it landed and is valid JSON:
 node -e "const s=JSON.parse(require('fs').readFileSync('contract/external-resources-api.schema.json','utf8')); console.log(s.\$id, Object.keys(s.\$defs).length)"
 ```
 
-Expected: `https://collaborator.pro/schemas/external-resources/v1.json 14`
+Expected: `https://collaborator.pro/schemas/external-resources/v1.json 16`
 
 - [ ] **Step 3: Create the API package**
 
