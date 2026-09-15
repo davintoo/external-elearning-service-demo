@@ -31,7 +31,12 @@ test('GET /api/config reports the mode and never the token', async () => {
 
         assert.equal(res.status, 200);
         assert.equal(body.mode, 'live');
-        assert.equal(JSON.stringify(body).includes('token'), false);
+        // Case-insensitive, and checks the secret's VALUE too. A leak would most likely
+        // surface under the config's own field name, `lmsApiToken`, whose capital T a
+        // lowercase substring search misses entirely.
+        const serialized = JSON.stringify(body);
+        assert.equal(serialized.toLowerCase().includes('token'), false, serialized);
+        assert.equal(serialized.includes('super-secret'), false, serialized);
     }, {config: {...CONFIG, mode: 'live', lmsApiToken: 'super-secret'}});
 });
 
@@ -119,6 +124,19 @@ test('a forced code is surfaced with its status and key', async () => {
         assert.equal(res.status, 410);
         assert.equal(body.error.key, 'session_expired');
     });
+});
+
+test('the force switch is ignored in live mode, so it can never reach a real LMS', async () => {
+    // The same MockLmsClient as every other test - only the mode differs, which is the
+    // point: this asserts the GATE, not the mock. Delete the `config.mode === 'mock'`
+    // check in app.js and this comes back 410 instead of the session.
+    await withServer(async base => {
+        const res = await fetch(`${base}/api/session/${SESSION_ID}?force=410`);
+        const body = await res.json();
+
+        assert.equal(res.status, 200);
+        assert.equal(body.data.session_id, SESSION_ID);
+    }, {config: {...CONFIG, mode: 'live', lmsBaseUrl: 'https://lms.example.com', lmsApiToken: 'tok'}});
 });
 
 test('responses carry a frame-ancestors policy so the LMS can embed us', async () => {
