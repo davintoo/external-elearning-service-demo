@@ -2244,8 +2244,81 @@ git commit -m "feat: angular scaffold, launch parsing and the no-session screen"
 ### Task 8: Session store with a LocalStorage fallback
 
 **Files:**
+- Create: `web/src/test-setup.ts`
+- Modify: `web/angular.json` (test target `setupFiles`)
 - Create: `web/src/app/core/session-store.ts`
 - Test: `web/src/app/core/session-store.spec.ts`
+
+**Test environment first.** Node 26 defines its own `globalThis.localStorage`, inert without
+`--localstorage-file`, and Vitest's jsdom environment will not overwrite a global it did not
+create. So specs see Node's non-functional getter, not a working `Storage` — and
+`window.localStorage` is no escape, because `window === globalThis` there. A `NODE_OPTIONS`
+prefix in the npm script fixes it on POSIX and breaks it on Windows `cmd.exe`, which this
+repo's readers will be using. Redefine the global in a setup file instead: no dependency, no
+shell syntax, same behaviour everywhere.
+
+`web/src/test-setup.ts`:
+
+```ts
+/**
+ * The spec spies on `Storage.prototype.setItem`, so the object installed here must call
+ * through that prototype - otherwise the spy never intercepts and the fallback test
+ * silently tests nothing.
+ */
+class MemoryStorage {
+  private readonly data = new Map<string, string>();
+
+  get length(): number {
+    return this.data.size;
+  }
+
+  clear(): void {
+    this.data.clear();
+  }
+
+  getItem(key: string): string | null {
+    return this.data.has(key) ? this.data.get(key)! : null;
+  }
+
+  key(index: number): string | null {
+    return [...this.data.keys()][index] ?? null;
+  }
+
+  removeItem(key: string): void {
+    this.data.delete(key);
+  }
+
+  setItem(key: string, value: string): void {
+    this.data.set(key, String(value));
+  }
+}
+
+// `Storage` is redefined too, so `vi.spyOn(Storage.prototype, 'setItem')` patches the very
+// prototype the instance below dispatches through.
+for (const [name, value] of [['Storage', MemoryStorage], ['localStorage', new MemoryStorage()]] as const) {
+  Object.defineProperty(globalThis, name, {value, configurable: true, writable: true});
+}
+```
+
+Wire it in `web/angular.json` under `projects.web.architect.test`:
+
+```json
+"test": {
+  "builder": "@angular/build:unit-test",
+  "options": {"setupFiles": ["src/test-setup.ts"]}
+}
+```
+
+`web/package.json`'s `test` script stays the plain scaffolded `ng test`.
+
+Add the setup file to `web/tsconfig.spec.json`'s `include` as well — it is part of the test
+compilation, and without it every run prints `File 'src/test-setup.ts' not found in
+TypeScript compilation`. A warning on every run of a reference repo teaches its readers that
+warnings are normal:
+
+```json
+"include": ["src/**/*.d.ts", "src/**/*.spec.ts", "src/test-setup.ts"]
+```
 
 **Interfaces:**
 - Consumes: `StoredSession`, `ChecklistValue`, `ResultResponse` from `core/types.ts`.
@@ -2357,15 +2430,21 @@ describe('SessionStore', () => {
   });
 
   it('falls back to memory when storage throws, and says so', () => {
-    // Vitest, not Jasmine: vi.spyOn + mockImplementation, restored via vi.restoreAllMocks.
+    // Construct FIRST, while storage still works, so probeStorage() reports true. Spying
+    // before construction makes the probe fail instead, and then `persistent` is already
+    // false before a single write - which is how this test used to pass with the line it
+    // guards deleted.
+    const store = make();
+    expect(store.persistent()).toBe(true);
+
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new Error('QuotaExceededError');
     });
 
-    const store = make();
     store.start(ID);
     store.saveProgress(ID, {c1: 'yes'}, {});
 
+    // Flipped BY the failed write, not by the constructor probe.
     expect(store.persistent()).toBe(false);
     expect(store.get(ID)!.answers['c1']).toBe('yes');
 
@@ -2400,7 +2479,6 @@ export const SESSIONS_KEY = 'demo.sessions';
 @Injectable({providedIn: 'root'})
 export class SessionStore {
   private readonly state = signal<StoredSession[]>(readAll());
-  private memory: StoredSession[] = [];
 
   readonly sessions = this.state.asReadonly();
   readonly persistent = signal(probeStorage());
@@ -2460,8 +2538,9 @@ export class SessionStore {
   }
 
   private write(sessions: StoredSession[]): void {
+    // The signal IS the in-memory fallback: it already holds the value before storage is
+    // attempted, so a failed write costs persistence, never the session in front of you.
     this.state.set(sessions);
-    this.memory = sessions;
 
     try {
       localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
@@ -2500,7 +2579,7 @@ function probeStorage(): boolean {
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `npm test --workspace=web`
-Expected: PASS — all 10 `SessionStore` specs.
+Expected: PASS — all 9 `SessionStore` specs.
 
 - [ ] **Step 5: Commit**
 
