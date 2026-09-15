@@ -6,7 +6,7 @@
 
 **Architecture:** Two npm workspaces. `api/` is an Express service that is the only holder of the LMS API token; it exposes answer-shaped routes to our own browser app and maps them onto the LMS contract. `web/` is an Angular standalone app that reads `session_id` from its launch URL, keeps per-launch answers in LocalStorage, and never talks to the LMS directly. A mock LMS client (default) and a live one sit behind one interface, so the demo runs with zero setup and switches to a real LMS by setting two env vars.
 
-**Tech Stack:** Node 26 + Express 5 (ESM), `node:test` for API tests, `ajv` (2020-12) for contract validation, Angular 20 standalone + signals, plain CSS.
+**Tech Stack:** Node 26 + Express 5 (ESM), `node:test` for API tests, `ajv` (2020-12) for contract validation, Angular 22 (standalone + signals, Vitest + jsdom), plain CSS.
 
 Spec: [`docs/superpowers/specs/2026-09-15-external-service-demo-design.md`](../specs/2026-09-15-external-service-demo-design.md)
 
@@ -19,6 +19,15 @@ Spec: [`docs/superpowers/specs/2026-09-15-external-service-demo-design.md`](../s
 - Every `localStorage` access is wrapped in try/catch with an in-memory fallback. A throwing or absent `localStorage` must never break a screen.
 - `api/` is ESM (`"type": "module"`). JSON files are loaded with `readFileSync` + `JSON.parse`, never with import attributes.
 - Working branch is `feat/external-service-demo`. Commit after every task. Never push.
+- The web app is Angular 22. Its CLI scaffolds **Vitest + jsdom** (`@angular/build:unit-test`),
+  not Karma/Jasmine: `describe`/`it`/`expect` are Vitest globals, spies are `vi.spyOn`, and no
+  browser binary is needed. Do not add Karma, Jasmine, or `--browsers` flags.
+  (`tsconfig.spec.json` sets `"types": ["vitest/globals"]`, and the scaffolded spec uses
+  `describe`/`it`/`expect` with no imports, so the globals are on. `vi` is assumed to come
+  from that same set but was not separately confirmed — if it is undefined at runtime, add
+  `import {vi} from 'vitest';` to the spec and note it in your report.)
+- `standalone` is the default in Angular 22 and the CLI omits it. Do not write
+  `standalone: true` on a component.
 
 ---
 
@@ -1328,7 +1337,12 @@ test('GET /api/config reports the mode and never the token', async () => {
         // Asserted in LIVE mode deliberately: the point is that a configured token is
         // never echoed, and in mock mode there is no token to leak in the first place.
         assert.equal(body.mode, 'live');
-        assert.equal(JSON.stringify(body).includes('token'), false);
+        // Case-insensitive, and checks the secret's VALUE too. A leak would most likely
+        // surface under the config's own field name, `lmsApiToken`, whose capital T a
+        // lowercase substring search misses entirely.
+        const serialized = JSON.stringify(body);
+        assert.equal(serialized.toLowerCase().includes('token'), false, serialized);
+        assert.equal(serialized.includes('super-secret'), false, serialized);
     }, {config: {...CONFIG, mode: 'live', lmsApiToken: 'super-secret'}});
 });
 
@@ -1416,6 +1430,19 @@ test('a forced code is surfaced with its status and key', async () => {
         assert.equal(res.status, 410);
         assert.equal(body.error.key, 'session_expired');
     });
+});
+
+test('the force switch is ignored in live mode, so it can never reach a real LMS', async () => {
+    // The same MockLmsClient as every other test - only the mode differs, which is the
+    // point: this asserts the GATE, not the mock. Delete the `config.mode === 'mock'`
+    // check in app.js and this comes back 410 instead of the session.
+    await withServer(async base => {
+        const res = await fetch(`${base}/api/session/${SESSION_ID}?force=410`);
+        const body = await res.json();
+
+        assert.equal(res.status, 200);
+        assert.equal(body.data.session_id, SESSION_ID);
+    }, {config: {...CONFIG, mode: 'live', lmsBaseUrl: 'https://lms.example.com', lmsApiToken: 'tok'}});
 });
 
 test('responses carry a frame-ancestors policy so the LMS can embed us', async () => {
@@ -1676,6 +1703,22 @@ test('a malformed session id is replaced rather than embedded', async () => {
     });
 });
 
+test('a hostile force value cannot break out of the iframe src', async () => {
+    await withServer(async base => {
+        const id = 'b3f1c9e2-4a17-4c0e-9f31-8a2d5e77b101';
+        const hostile = '"><script>alert(1)</script>';
+        const html = await (await fetch(
+            `${base}/demo/lms?session_id=${id}&force=${encodeURIComponent(hostile)}`
+        )).text();
+
+        // This page renders query-derived values straight into markup, which is a real
+        // injection surface even in a demo. `session_id` is pattern-checked, but `force`
+        // is arbitrary text and reaches both an attribute and a link.
+        assert.equal(html.includes('<script>alert(1)</script>'), false, html);
+        assert.equal(html.includes('"><script'), false, html);
+    });
+});
+
 test('the host page is not served in live mode', async () => {
     await withServer(async base => {
         assert.equal((await fetch(`${base}/demo/lms`)).status, 404);
@@ -1842,16 +1885,15 @@ git commit -m "feat: mock LMS host page embedding the simulator in a real iframe
 Run from the repo root:
 
 ```bash
-npx --yes @angular/cli@20 new web \
+npx --yes @angular/cli@22 new web \
   --directory=web --style=css --routing=false --ssr=false \
   --skip-git --skip-install --package-manager=npm
 ```
 
-Expected: `web/` created with `src/app/app.ts`, `app.html`, `app.css`, `app.config.ts`.
-
-If the CLI refuses to run because Node 26 is not in its supported range, re-run with
-`@angular/cli@latest` instead and note the version used in the README. Nothing else in this
-plan depends on the minor version.
+Expected: `web/` created with `src/app/app.ts`, `app.html`, `app.css`, `app.config.ts`,
+`tsconfig.spec.json`, and `angular.json` carrying `"test": {"builder": "@angular/build:unit-test"}`.
+Its devDependencies are `vitest` and `jsdom` — there is no Karma, no Jasmine, and no browser
+binary to install. Angular 22 lists Node 26 in its own `engines`, so the scaffold runs here.
 
 Then install everything from the root so the workspace links up:
 
@@ -1917,11 +1959,12 @@ describe('readLaunch', () => {
 
 - [ ] **Step 4: Run the test to verify it fails**
 
-Run: `npm test --workspace=web -- --no-watch --browsers=ChromeHeadless`
+Run: `npm test --workspace=web`
 Expected: FAIL — cannot resolve `./launch`.
 
-If Karma cannot find a browser, install one and retry:
-`npx --yes playwright install chromium` then export `CHROME_BIN` to the path it prints.
+If the run enters watch mode instead of exiting, append the builder's non-watch flag
+(`-- --watch=false`) and record the working invocation in your report so later tasks and the
+README use the same one.
 
 - [ ] **Step 5: Write the contract types**
 
@@ -2034,7 +2077,6 @@ import {readLaunch} from './core/launch';
 
 @Component({
   selector: 'app-root',
-  standalone: true,
   templateUrl: './app.html',
   styleUrl: './app.css'
 })
@@ -2127,7 +2169,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 
 - [ ] **Step 8: Run the test to verify it passes**
 
-Run: `npm test --workspace=web -- --no-watch --browsers=ChromeHeadless`
+Run: `npm test --workspace=web`
 Expected: PASS — the 5 `readLaunch` specs. Delete the default `app.spec.ts` if the scaffold's
 placeholder title assertion fails; it tests nothing we keep.
 
@@ -2264,8 +2306,10 @@ describe('SessionStore', () => {
   });
 
   it('falls back to memory when storage throws, and says so', () => {
-    const setItem = Storage.prototype.setItem;
-    spyOn(Storage.prototype, 'setItem').and.throwError('QuotaExceededError');
+    // Vitest, not Jasmine: vi.spyOn + mockImplementation, restored via vi.restoreAllMocks.
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('QuotaExceededError');
+    });
 
     const store = make();
     store.start(ID);
@@ -2274,14 +2318,14 @@ describe('SessionStore', () => {
     expect(store.persistent()).toBe(false);
     expect(store.get(ID)!.answers['c1']).toBe('yes');
 
-    Storage.prototype.setItem = setItem;
+    vi.restoreAllMocks();
   });
 });
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `npm test --workspace=web -- --no-watch --browsers=ChromeHeadless`
+Run: `npm test --workspace=web`
 Expected: FAIL — cannot resolve `./session-store`.
 
 - [ ] **Step 3: Write the store**
@@ -2404,7 +2448,7 @@ function probeStorage(): boolean {
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `npm test --workspace=web -- --no-watch --browsers=ChromeHeadless`
+Run: `npm test --workspace=web`
 Expected: PASS — all 10 `SessionStore` specs.
 
 - [ ] **Step 5: Commit**
@@ -2528,7 +2572,6 @@ import {SessionContext} from '../core/types';
 
 @Component({
   selector: 'app-context-card',
-  standalone: true,
   template: `
     <section class="card">
       <h2>{{ context().user.name }}</h2>
@@ -2560,7 +2603,6 @@ import {StoredSession} from '../core/types';
 
 @Component({
   selector: 'app-sessions-list',
-  standalone: true,
   template: `
     <section class="card">
       <h2>Sessions on this browser</h2>
@@ -2642,7 +2684,6 @@ type Screen = 'no-session' | 'loading' | 'error' | 'list' | 'checklist' | 'finis
 
 @Component({
   selector: 'app-root',
-  standalone: true,
   imports: [ContextCard, SessionsList],
   templateUrl: './app.html',
   styleUrl: './app.css'
@@ -2805,7 +2846,6 @@ interface Group {
 
 @Component({
   selector: 'app-checklist-form',
-  standalone: true,
   template: `
     <section class="card">
       <h2>{{ checklist().title }}</h2>
@@ -3077,7 +3117,6 @@ import {SubmitResponse} from '../core/types';
 
 @Component({
   selector: 'app-finish-screen',
-  standalone: true,
   template: `
     <section class="card">
       <h1>Result sent</h1>
@@ -3404,8 +3443,8 @@ A rejected send never costs the learner their answers — they stay in LocalStor
 ## Tests
 
 ```bash
-npm test                                                   # API
-npm test --workspace=web -- --no-watch --browsers=ChromeHeadless
+npm test                        # API — node:test
+npm test --workspace=web        # web — Vitest + jsdom, no browser needed
 ```
 
 The most important one compiles `contract/external-resources-api.schema.json` — the schema
@@ -3429,7 +3468,7 @@ docs/      design spec and implementation plan
 rm -rf node_modules web/dist
 npm install
 npm test
-npm test --workspace=web -- --no-watch --browsers=ChromeHeadless
+npm test --workspace=web
 npm start
 ```
 
