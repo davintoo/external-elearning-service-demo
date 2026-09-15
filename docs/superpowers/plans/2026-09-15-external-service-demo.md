@@ -2951,6 +2951,136 @@ export class App {
 }
 ```
 
+- [ ] **Step 5b: Cover the three new units**
+
+`web/src/app/core/api.spec.ts`:
+
+```ts
+import {TestBed} from '@angular/core/testing';
+import {provideHttpClient} from '@angular/common/http';
+import {HttpTestingController, provideHttpClientTesting} from '@angular/common/http/testing';
+import {DemoApi} from './api';
+
+const ID = 'b3f1c9e2-4a17-4c0e-9f31-8a2d5e77b101';
+
+describe('DemoApi', () => {
+  let api: DemoApi;
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideHttpClientTesting()]
+    });
+    api = TestBed.inject(DemoApi);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => http.verify());
+
+  it('unwraps the data envelope', async () => {
+    const result = api.session(ID, null);
+    http.expectOne(`/api/session/${ID}`).flush({data: {session_id: ID, threshold: 80}});
+
+    expect((await result).threshold).toBe(80);
+  });
+
+  it('forwards force rather than gating it - the server owns that decision', async () => {
+    const result = api.session(ID, '410');
+    http.expectOne(req => req.url.includes('force=410')).flush({data: {session_id: ID}});
+
+    await result;
+  });
+
+  it('surfaces the server error envelope as an ApiError', async () => {
+    const result = api.session(ID, null);
+    http.expectOne(() => true).flush(
+      {error: {status: 410, key: 'session_expired', message: 'Task deadline has passed'}},
+      {status: 410, statusText: 'Gone'}
+    );
+
+    await expect(result).rejects.toMatchObject({key: 'session_expired', status: 410});
+  });
+
+  it('reports an unreachable demo server distinctly from a rejected result', async () => {
+    // status 0 is the browser refusing to say why. Conflating it with a rejection would
+    // tell a learner their work was refused when in fact it never arrived.
+    const result = api.session(ID, null);
+    http.expectOne(() => true).error(new ProgressEvent('error'), {status: 0});
+
+    await expect(result).rejects.toMatchObject({key: 'demo_unreachable'});
+  });
+});
+```
+
+`web/src/app/ui/context-card.spec.ts`:
+
+```ts
+import {TestBed} from '@angular/core/testing';
+import {ContextCard} from './context-card';
+import {SessionContext} from '../core/types';
+
+const context: SessionContext = {
+  session_id: 'b3f1c9e2-4a17-4c0e-9f31-8a2d5e77b101',
+  user: {id: 482, name: 'Ivan Petrenko', login: 'i.petrenko', lang: 'uk'},
+  resource_id: 512, task_id: 9137, attempt_number: 2, attempts_limit: 3,
+  threshold: 80, status: 'inprogress', mark: null,
+  started_at: '2026-09-15T09:14:02Z', expires_at: null
+};
+
+describe('ContextCard', () => {
+  it('shows who the learner is and what they are held to', async () => {
+    const fixture = TestBed.createComponent(ContextCard);
+    fixture.componentRef.setInput('context', context);
+    await fixture.whenStable();
+
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(text).toContain('Ivan Petrenko');
+    expect(text).toContain('attempt 2');
+    expect(text).toContain('80');
+  });
+});
+```
+
+`web/src/app/ui/sessions-list.spec.ts`:
+
+```ts
+import {TestBed} from '@angular/core/testing';
+import {SessionsList} from './sessions-list';
+import {StoredSession} from '../core/types';
+
+const ID = 'b3f1c9e2-4a17-4c0e-9f31-8a2d5e77b101';
+
+const render = async (sessions: StoredSession[], persistent: boolean) => {
+  const fixture = TestBed.createComponent(SessionsList);
+  fixture.componentRef.setInput('sessions', sessions);
+  fixture.componentRef.setInput('currentId', ID);
+  fixture.componentRef.setInput('persistent', persistent);
+  fixture.componentRef.setInput('actionLabel', 'Start');
+  await fixture.whenStable();
+
+  return (fixture.nativeElement as HTMLElement).textContent ?? '';
+};
+
+describe('SessionsList', () => {
+  it('says so when history will not survive a reload', async () => {
+    expect(await render([], false)).toContain('Storage is unavailable');
+  });
+
+  it('stays quiet about storage when it works', async () => {
+    expect(await render([], true)).not.toContain('Storage is unavailable');
+  });
+
+  it('marks which session is the current launch', async () => {
+    const session: StoredSession = {
+      sessionId: ID, startedAt: 'x', updatedAt: 'y', status: 'in-progress',
+      answers: {}, comments: {}, lastResult: null
+    };
+
+    expect(await render([session], true)).toContain('current');
+  });
+});
+```
+
 - [ ] **Step 6: Verify in the browser**
 
 Run `npm run dev --workspace=api` and `npm start --workspace=web`, open
