@@ -19,6 +19,15 @@ Spec: [`docs/superpowers/specs/2026-09-15-external-service-demo-design.md`](../s
 - Every `localStorage` access is wrapped in try/catch with an in-memory fallback. A throwing or absent `localStorage` must never break a screen.
 - `api/` is ESM (`"type": "module"`). JSON files are loaded with `readFileSync` + `JSON.parse`, never with import attributes.
 - Working branch is `feat/external-service-demo`. Commit after every task. Never push.
+- **The shipped test files are authoritative for their own contents.** Several tasks grew
+  additional specs during review — coverage for the three units Task 9 delivered untested,
+  the mark-preview arithmetic, the raw-JSON panels, the rejected-send guarantee, and the
+  token-never-in-an-error-message case. Those cases live in the test files, not repeated
+  here. This plan's *implementation* blocks are byte-identical to the shipped sources and
+  are kept that way; its test blocks are the starting point each task was given, not a
+  transcript of what ended up running. Read `api/test/` and `web/src/**/*.spec.ts` for the
+  suite as it stands. Duplicating them here would create a second copy to drift — which is
+  precisely how eight defects entered this branch through this document's own code blocks.
 - The web app is Angular 22. Its CLI scaffolds **Vitest + jsdom** (`@angular/build:unit-test`),
   not Karma/Jasmine: `describe`/`it`/`expect` are Vitest globals, spies are `vi.spyOn`, and no
   browser binary is needed. Do not add Karma, Jasmine, or `--browsers` flags.
@@ -3103,6 +3112,8 @@ git commit -m "feat: api client, learner context card and sessions list"
 
 **Files:**
 - Create: `web/src/app/ui/checklist-form.ts`
+- Test: `web/src/app/ui/checklist-form.spec.ts` (5 specs — weighted mark, `na` excluded from
+  both sides, all-`na` yields 0, Finish gated on completeness, `changed` emits current answers)
 - Modify: `web/src/app/app.ts`, `web/src/app/app.html`
 
 **Interfaces:**
@@ -3435,7 +3446,8 @@ Expected: the red card shows `resource_not_external` and the answers remain fill
 - [ ] **Step 5: Commit**
 
 ```bash
-git add web/src/app/ui/checklist-form.ts web/src/app/app.ts web/src/app/app.html web/src/styles.css
+git add web/src/app/ui/checklist-form.ts web/src/app/ui/checklist-form.spec.ts \
+        web/src/app/app.ts web/src/app/app.html web/src/styles.css
 git commit -m "feat: checklist screen, live mark preview and submission"
 ```
 
@@ -3445,6 +3457,8 @@ git commit -m "feat: checklist screen, live mark preview and submission"
 
 **Files:**
 - Create: `web/src/app/ui/finish-screen.ts`
+- Test: `web/src/app/ui/finish-screen.spec.ts` (5 specs — verdict note present on `fail` and
+  absent on `finished`, both raw-JSON panels rendering real values, `again` emits)
 - Modify: `web/src/app/app.ts`, `web/src/app/app.html`
 
 **Interfaces:**
@@ -3566,7 +3580,8 @@ sessions list still shows a single session — the attempt number stays `1`.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add web/src/app/ui/finish-screen.ts web/src/app/app.ts web/src/app/app.html
+git add web/src/app/ui/finish-screen.ts web/src/app/ui/finish-screen.spec.ts \
+        web/src/app/app.ts web/src/app/app.html
 git commit -m "feat: finish screen with the raw payload both ways"
 ```
 

@@ -1,7 +1,7 @@
 # External e-learning service demo — design
 
 Date: 2026-09-15
-Status: approved, not yet implemented
+Status: implemented on `feat/external-service-demo` — where this document and the code differ, the code is authoritative
 Scope: this repository (`external-elearning-service-demo`), greenfield
 
 ## Goal
@@ -36,7 +36,7 @@ The contract being demonstrated is published as
 ```
 external-elearning-service-demo/
 ├── api/        Node + Express. Holds the API token, owns the LMS contract
-├── web/        Angular 20 standalone + signals. The simulator UI, shown in the iframe
+├── web/        Angular 22 standalone + signals. The simulator UI, shown in the iframe
 ├── contract/   external-resources-api.schema.json — the published contract, used by tests
 └── docs/       this spec and the implementation plan
 ```
@@ -87,8 +87,11 @@ the mark. Two reasons:
 
 ### 1.3 Mock and live modes
 
-One `LmsClient` interface, two implementations, chosen at startup by whether `LMS_BASE_URL`
-and `LMS_API_TOKEN` are both set:
+Two interchangeable clients — `MockLmsClient` and `LiveLmsClient` — chosen at startup by
+`createLmsClient()` on whether `LMS_BASE_URL` and `LMS_API_TOKEN` are both set. They share a
+shape (`getSession`, `saveResult`), not a declared interface; in plain JS a named interface
+would be commentary, and the shared shape is enforced by both being exercised through the
+same routes.
 
 - **live** — HTTP to the LMS with the token header.
 - **mock** — in-memory session store, no network. Default, so `npm install && npm start`
@@ -150,7 +153,7 @@ survive a reload. Without this the demo dies on Safari in a way that looks like 
 | --- | --- |
 | Not in the store | **Start** — creates the local row, opens an empty checklist |
 | Present, `in-progress` | **Resume** — reopens with the saved answers restored |
-| Present, `finished` | Read-only summary + **Send again** |
+| Present, `finished` | **Send again** — reopens the stored answers in the editable checklist |
 
 *Send again* is not a loophole: the contract makes `session_id` the idempotency key and
 explicitly allows a finished session to be updated (§4.3), with every change logged to SIEM
@@ -196,10 +199,13 @@ of §4.2, and the finish screen calls it out.
 
 ### 2.6 Finish screen
 
-LMS-returned `status`, `mark`, `threshold`, `task_status`, `task_mark`, `updated_at`, with
-the sent-vs-returned status difference highlighted when they differ. Below, a collapsed panel
-with the raw JSON of both directions. The local row is marked `finished` and `lastResult`
-stored.
+LMS-returned `status`, `mark`, `threshold`, `task_status`, `task_mark`, `updated_at`. Below,
+a collapsed panel with the raw JSON of both directions. The local row is marked `finished`
+and `lastResult` stored.
+
+The screen calls out a `fail` verdict specifically, rather than any sent-vs-returned
+difference. Since the service always sends `completed`, the two *always* differ; the moment
+worth explaining is the one where the LMS overrode the vendor's report against the threshold.
 
 ## 3. Errors
 
@@ -213,7 +219,7 @@ The contract's error table is the specification for this. Each maps to its own m
 | 404 | `not_found` | Unknown session, another site's session, or a deleted one |
 | 409 | `resource_not_external` | The administrator turned the option off |
 | 410 | `session_expired` | The task deadline passed — the answers stay in LocalStorage, nothing is lost |
-| 429 | `too_many_requests` | Rate limited; retry after `Retry-After` |
+| 429 | `too_many_requests` | Rate limited. The demo reports it and stops; it does not retry — see §8 |
 
 A demo that only walks the happy path teaches nothing about the failure modes an integrator
 will actually hit. In mock mode `/demo/lms?force=410` (and each other code) forces the
@@ -225,8 +231,10 @@ the answers preserved — never a lost checklist.
 ## 4. Embedding
 
 - No `X-Frame-Options: DENY`. `Content-Security-Policy: frame-ancestors` is built from
-  `ALLOWED_FRAME_ANCESTORS` (space-separated origins, default `'self'` plus the local mock
-  host page).
+  `ALLOWED_FRAME_ANCESTORS` (space-separated origins, default `'self'`). That default already
+  covers the mock host page, which is served from the same origin as the simulator in both
+  the built single-port mode and behind the dev proxy. A real LMS on another origin has to be
+  named explicitly.
 - The mock LMS host page embeds the simulator with a generated v4 UUID, so step 1 of the flow
   is a real cross-document iframe, not a simulation of one.
 
