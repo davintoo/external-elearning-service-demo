@@ -1,13 +1,41 @@
-@if (!launch().sessionId) {
-  <section class="card notice">
-    <h1>Launch this from the LMS</h1>
-    <p>
-      This page is an external learning resource. The LMS opens it in an iframe with a
-      <code>session_id</code> on the URL — that UUID is the only thing it hands over, and
-      without it there is no learner to report a result for.
-    </p>
-    <p><a href="/demo/lms">Open the mock LMS task page</a></p>
-  </section>
-} @else {
-  <p class="card">Session {{ launch().sessionId }}</p>
+@switch (screen()) {
+  @case ('no-session') {
+    <section class="card notice">
+      <h1>Launch this from the LMS</h1>
+      <p>
+        This page is an external learning resource. The LMS opens it in an iframe with a
+        <code>session_id</code> on the URL — that UUID is the only thing it hands over, and
+        without it there is no learner to report a result for.
+      </p>
+      <p><a href="/demo/lms">Open the mock LMS task page</a></p>
+    </section>
+  }
+
+  @case ('loading') {
+    <p class="card">Loading the session…</p>
+  }
+
+  @case ('error') {
+    <section class="card">
+      <h1>The LMS could not be reached</h1>
+      <p><code>{{ error()!.key }}</code> — {{ error()!.message }}</p>
+    </section>
+  }
+
+  @default {
+    @if (mode() === 'mock') {
+      <p class="card muted">Mock mode — no LMS is configured, results are not stored anywhere.</p>
+    }
+
+    <app-context-card [context]="context()!" />
+
+    @if (screen() === 'list') {
+      <app-sessions-list
+        [sessions]="store.sessions()"
+        [currentId]="launch().sessionId!"
+        [persistent]="store.persistent()"
+        [actionLabel]="actionLabel()"
+        (open)="openChecklist()" />
+    }
+  }
 }
