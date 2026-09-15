@@ -1325,7 +1325,9 @@ test('GET /api/config reports the mode and never the token', async () => {
         const body = await res.json();
 
         assert.equal(res.status, 200);
-        assert.equal(body.mode, 'mock');
+        // Asserted in LIVE mode deliberately: the point is that a configured token is
+        // never echoed, and in mock mode there is no token to leak in the first place.
+        assert.equal(body.mode, 'live');
         assert.equal(JSON.stringify(body).includes('token'), false);
     }, {config: {...CONFIG, mode: 'live', lmsApiToken: 'super-secret'}});
 });
