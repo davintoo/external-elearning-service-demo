@@ -193,10 +193,18 @@ test('serves the built web app and falls back to index.html for the launch url',
         assert.equal(root.status, 200);
         assert.match(await root.text(), /simulator/);
 
-        // The API must keep answering JSON, not the SPA shell.
+        // A known API route still answers with our JSON envelope.
         const missing = await fetch(`${base}/api/session/nonsense`);
         assert.equal(missing.status, 404);
         assert.equal((await missing.json()).error.key, 'not_found');
+
+        // And the fallback itself: a path under /api with NO route of its own must not be
+        // handed the SPA shell. Asserting this on /api/session/nonsense would prove
+        // nothing - that path is caught by the session route registered above, whatever
+        // the fallback's exclusion does, so the test would pass with the exclusion deleted.
+        const unrouted = await fetch(`${base}/api/nonexistent`);
+        assert.equal(unrouted.status, 404);
+        assert.equal((await unrouted.text()).includes('simulator'), false);
     } finally {
         server.close();
     }
