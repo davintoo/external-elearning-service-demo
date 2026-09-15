@@ -113,7 +113,5 @@ describe('SessionStore', () => {
     // Flipped BY the failed write, not by the constructor probe.
     expect(store.persistent()).toBe(false);
     expect(store.get(ID)!.answers['c1']).toBe('yes');
-
-    vi.restoreAllMocks();
   });
 });
