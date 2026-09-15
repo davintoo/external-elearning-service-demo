@@ -14,7 +14,6 @@ export const SESSIONS_KEY = 'demo.sessions';
 @Injectable({providedIn: 'root'})
 export class SessionStore {
   private readonly state = signal<StoredSession[]>(readAll());
-  private memory: StoredSession[] = [];
 
   readonly sessions = this.state.asReadonly();
   readonly persistent = signal(probeStorage());
@@ -74,8 +73,9 @@ export class SessionStore {
   }
 
   private write(sessions: StoredSession[]): void {
+    // The signal IS the in-memory fallback: it already holds the value before storage is
+    // attempted, so a failed write costs persistence, never the session in front of you.
     this.state.set(sessions);
-    this.memory = sessions;
 
     try {
       localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));

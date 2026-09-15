@@ -96,15 +96,21 @@ describe('SessionStore', () => {
   });
 
   it('falls back to memory when storage throws, and says so', () => {
-    // Vitest, not Jasmine: vi.spyOn + mockImplementation, restored via vi.restoreAllMocks.
+    // Construct FIRST, while storage still works, so probeStorage() reports true. Spying
+    // before construction makes the probe fail instead, and then `persistent` is already
+    // false before a single write - which is how this test used to pass with the line it
+    // guards deleted.
+    const store = make();
+    expect(store.persistent()).toBe(true);
+
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new Error('QuotaExceededError');
     });
 
-    const store = make();
     store.start(ID);
     store.saveProgress(ID, {c1: 'yes'}, {});
 
+    // Flipped BY the failed write, not by the constructor probe.
     expect(store.persistent()).toBe(false);
     expect(store.get(ID)!.answers['c1']).toBe('yes');
 
