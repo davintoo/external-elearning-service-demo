@@ -122,6 +122,14 @@ test('a rejection names the field at fault, which is the only reason to develop 
 
     // An undeclared property is the other shape ajv reports with an empty instancePath.
     assert.ok((await fieldsOf({extra_junk: true})).extra_junk);
+
+    // A malformed item must be reported as the malformed item. "must match exactly one
+    // schema in oneOf" names nothing, and `data` is where integrators actually go wrong.
+    const dataFields = await fieldsOf({
+        data: {format: 'checklist', items: [{id: 'c1', value: 'yes'}]}
+    });
+    assert.match(dataFields.data, /text/, dataFields.data);
+    assert.equal(/oneOf/.test(dataFields.data), false, dataFields.data);
 });
 
 test('an oversized payload is refused with the same 1 MB rule the LMS applies', async () => {

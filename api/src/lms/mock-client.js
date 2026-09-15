@@ -100,22 +100,42 @@ export class MockLmsClient {
         }
 
         if (!validateRequest(payload)) {
-            const fields = {};
+            // One entry per rejected field, keyed by the TOP-LEVEL field name, carrying the
+            // most specific reason available. Both halves take work:
+            //
+            // The key: ajv reports a missing required property with an empty instancePath
+            // and the name in params, so keying off instancePath alone files "session_id is
+            // missing" under "body" - useless to the integrator trying to fix it.
+            //
+            // The message: `data` is a oneOf, so ajv reports failures from BOTH branches
+            // plus a generic "must match exactly one schema in oneOf". The branch actually
+            // meant fails deepest - at the offending item - while the wrong branch fails
+            // shallowly on its `format` discriminator. So the deepest error is both the most
+            // specific and the one from the right branch, and the generic oneOf sentence,
+            // which names nothing, may only win when there is nothing else.
+            const best = new Map();
+
             for (const error of validateRequest.errors) {
-                // The contract keys each message by the TOP-LEVEL field name. Ajv reports a
-                // missing required property with an empty instancePath and the name in
-                // params, so keying off instancePath alone would file "session_id is
-                // missing" under "body" - useless to the integrator trying to fix it.
                 const path = (error.instancePath || '').split('/').filter(Boolean);
                 const field = path[0] ||
                     error.params?.missingProperty ||
                     error.params?.additionalProperty ||
                     'body';
 
+                const rank = error.keyword === 'oneOf' ? -1 : path.length;
+                const chosen = best.get(field);
+                if (!chosen || rank > chosen.rank) {
+                    best.set(field, {rank, error});
+                }
+            }
+
+            const fields = {};
+            for (const [field, {error}] of best) {
                 fields[field] = error.instancePath
-                    ? `"${field}" ${error.message}`
+                    ? `"${error.instancePath.slice(1).replace(/\//g, '.')}" ${error.message}`
                     : error.message;
             }
+
             throw new LmsError(400, 'validation_error', 'The LMS rejected the payload', fields);
         }
 
