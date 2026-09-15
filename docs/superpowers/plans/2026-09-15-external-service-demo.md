@@ -706,6 +706,16 @@ test('a rejection names the field at fault, which is the only reason to develop 
     // An unrecognised format is the one case where `format` really is the fault.
     const badFormat = await fieldsOf({data: {format: 'banana', items: []}});
     assert.match(badFormat.data, /format/, badFormat.data);
+
+    // The assertions above still pass if the branch lookup is hardcoded to the wrong
+    // shape, because QuizData and ChecklistData agree about `items`. This one cannot: a
+    // valid ChecklistItem sent as a quiz is rejected for carrying `value`, which QuizItem
+    // forbids - a complaint the checklist branch could never produce.
+    const wrongShape = await fieldsOf({
+        data: {format: 'quiz', items: [{id: 'q1', text: 'Which valve?', value: 'yes'}]}
+    });
+    assert.match(wrongShape.data, /value/, wrongShape.data);
+    assert.equal(/format/.test(wrongShape.data), false, wrongShape.data);
 });
 
 test('an oversized payload is refused with the same 1 MB rule the LMS applies', async () => {
