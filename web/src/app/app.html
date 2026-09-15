@@ -61,5 +61,9 @@
         (changed)="saveProgress($event)"
         (finish)="submit()" />
     }
+
+    @if (screen() === 'finish') {
+      <app-finish-screen [submission]="submission()!" (again)="reviseAndResend()" />
+    }
   }
 }

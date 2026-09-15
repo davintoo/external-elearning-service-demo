@@ -7,13 +7,14 @@ import {readLaunch} from './core/launch';
 import {ApiError, Checklist, ChecklistValue, SessionContext, SubmitResponse} from './core/types';
 import {ChecklistForm} from './ui/checklist-form';
 import {ContextCard} from './ui/context-card';
+import {FinishScreen} from './ui/finish-screen';
 import {SessionsList} from './ui/sessions-list';
 
 type Screen = 'no-session' | 'loading' | 'error' | 'list' | 'checklist' | 'finish';
 
 @Component({
   selector: 'app-root',
-  imports: [ContextCard, SessionsList, ChecklistForm, KeyValuePipe],
+  imports: [ContextCard, SessionsList, ChecklistForm, FinishScreen, KeyValuePipe],
   templateUrl: './app.html',
   styleUrl: './app.css'
 })
@@ -115,5 +116,11 @@ export class App {
     } finally {
       this.busy.set(false);
     }
+  }
+
+  protected reviseAndResend(): void {
+    this.store.reopen(this.launch().sessionId!);
+    this.submission.set(null);
+    this.screen.set('checklist');
   }
 }
