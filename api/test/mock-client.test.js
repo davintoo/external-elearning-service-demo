@@ -113,6 +113,15 @@ test('a rejection names the field at fault, which is the only reason to develop 
     assert.ok((await fieldsOf({
         data: {format: 'checklist', items: [{id: 'c1', value: 'yes'}]}
     })).data);
+
+    // The contract's own example carries two keys at once, so one bad field must not mask
+    // the next - ajv reports only the first unless allErrors is on.
+    const both = await fieldsOf({session_id: 'not-a-uuid', mark: 101});
+    assert.ok(both.session_id, `expected session_id, got ${JSON.stringify(both)}`);
+    assert.ok(both.mark, `expected mark, got ${JSON.stringify(both)}`);
+
+    // An undeclared property is the other shape ajv reports with an empty instancePath.
+    assert.ok((await fieldsOf({extra_junk: true})).extra_junk);
 });
 
 test('an oversized payload is refused with the same 1 MB rule the LMS applies', async () => {

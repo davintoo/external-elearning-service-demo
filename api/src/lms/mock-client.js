@@ -11,7 +11,11 @@ const schemaPath = fileURLToPath(
 );
 const schema = JSON.parse(readFileSync(schemaPath, 'utf8'));
 
-const ajv = new Ajv2020({strict: false});
+// allErrors: ajv stops at the first failing keyword by default, which would report only
+// one bad field per request. The contract's ValidationErrorResponse is "one entry per
+// rejected field" and its own example carries two at once - under-reporting here would
+// send an integrator round the loop once per mistake.
+const ajv = new Ajv2020({strict: false, allErrors: true});
 addFormats(ajv);
 ajv.addSchema(schema);
 const validateRequest = ajv.getSchema(`${schema.$id}#/$defs/ResultRequest`);
