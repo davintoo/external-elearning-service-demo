@@ -1,0 +1,21 @@
+# Installed inside the image, never copied in.
+node_modules
+**/node_modules
+
+# Build output — the image builds its own.
+web/dist
+.angular
+
+# Never belongs in an image.
+.env
+**/.env
+.git
+.gitignore
+
+# Scratch and documentation: not needed to run the demo.
+.superpowers
+docs
+*.log
+
+# contract/ is deliberately NOT ignored: the mock LMS client reads that schema at
+# runtime to enforce the same rules the real LMS does.

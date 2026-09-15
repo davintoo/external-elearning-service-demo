@@ -9,10 +9,8 @@
     "test": "node --test test/"
   },
   "dependencies": {
-    "express": "^5.1.0"
-  },
-  "devDependencies": {
     "ajv": "^8.17.1",
-    "ajv-formats": "^3.0.1"
+    "ajv-formats": "^3.0.1",
+    "express": "^5.1.0"
   }
 }
