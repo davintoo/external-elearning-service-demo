@@ -2298,6 +2298,19 @@ class MemoryStorage {
 for (const [name, value] of [['Storage', MemoryStorage], ['localStorage', new MemoryStorage()]] as const) {
   Object.defineProperty(globalThis, name, {value, configurable: true, writable: true});
 }
+
+/**
+ * Every spec starts from an empty store with unpatched prototypes.
+ *
+ * Without this, isolation rests on each spec remembering to clear the key it wrote, and a
+ * spec that forgets - or writes a second key - leaks state into its neighbours silently.
+ * Restoring here rather than at the end of a test body also survives a failing assertion,
+ * which would otherwise leave a throwing `setItem` installed for whatever runs next.
+ */
+afterEach(() => {
+  localStorage.clear();
+  vi.restoreAllMocks();
+});
 ```
 
 Wire it in `web/angular.json` under `projects.web.architect.test`:
