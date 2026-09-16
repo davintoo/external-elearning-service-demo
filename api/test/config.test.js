@@ -25,6 +25,33 @@ test('switches to live mode when both credentials are set', () => {
     assert.equal(config.lmsApiToken, 'tok');
 });
 
+test('refuses an untemplated placeholder instead of booting into a broken live mode', () => {
+    // Shipped exactly this way: the deployment secret still held the literal placeholder, so
+    // presence-only validation read it as live mode and every LMS call then died inside
+    // fetch, unlogged, while the rest of the app kept answering 200.
+    assert.throws(
+        () => loadConfig({LMS_BASE_URL: '{lms_base_url}', LMS_API_TOKEN: '{lms_api_token}'}),
+        error => {
+            assert.match(error.message, /LMS_BASE_URL is not a usable URL/);
+            assert.match(error.message, /\{lms_base_url\}/);
+            return true;
+        }
+    );
+});
+
+test('refuses a base url with no scheme, which URL() would otherwise accept', () => {
+    // `new URL('lms.example.com:443')` parses, with protocol "lms.example.com:" — so this
+    // has to be caught on the protocol, not on the parse.
+    assert.throws(
+        () => loadConfig({LMS_BASE_URL: 'lms.example.com:443', LMS_API_TOKEN: 'tok'}),
+        /must be http or https/
+    );
+});
+
+test('a bad base url is fatal even without a token, so a half-templated secret still shows', () => {
+    assert.throws(() => loadConfig({LMS_BASE_URL: '{lms_base_url}'}), /not a usable URL/);
+});
+
 test('strips trailing slashes from the base url so path joins never double up', () => {
     const config = loadConfig({
         LMS_BASE_URL: 'https://lms.example.com///',

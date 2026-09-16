@@ -49,6 +49,11 @@ docker run --rm -p 3000:3000 \
   external-elearning-demo
 ```
 
+`LMS_BASE_URL` is validated at startup: an absolute `http`/`https` url or the process refuses
+to start, naming the value. Leaving both variables unset is mock mode and always fine — it is
+a *set but unusable* url that is fatal, because a deployment whose templating did not run
+would otherwise come up in live mode and fail every LMS call at request time instead.
+
 Or mount a config file. `/app/config` exists for this and holds nothing else, so either
 form is safe:
 

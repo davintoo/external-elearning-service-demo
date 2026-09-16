@@ -12,7 +12,16 @@ try {
     // no .env file — mock mode
 }
 
-const config = loadConfig();
+let config;
+try {
+    config = loadConfig();
+} catch (error) {
+    // A bad setting has no useful stack: the fault is in the environment, not in this file,
+    // and a trace above the message only buries the one line an operator needs to act on.
+    console.error(`configuration error: ${error.message}`);
+    process.exit(1);
+}
+
 const distPath = fileURLToPath(new URL('../../web/dist/web/browser', import.meta.url));
 const webDist = existsSync(distPath) ? distPath : null;
 
