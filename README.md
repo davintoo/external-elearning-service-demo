@@ -40,7 +40,7 @@ docker run --rm -p 3000:3000 external-elearning-demo
 Same URL: <http://localhost:3000/demo/lms>. Mock mode is the default, so the container needs
 no LMS, no token and no environment at all.
 
-Against a real LMS, pass the two variables through instead of using a `.env` file:
+Against a real LMS, pass the two variables through:
 
 ```bash
 docker run --rm -p 3000:3000 \
@@ -48,6 +48,19 @@ docker run --rm -p 3000:3000 \
   -e LMS_API_TOKEN=<api token> \
   external-elearning-demo
 ```
+
+Or mount a config file. `/app/config` exists for this and holds nothing else, so either
+form is safe:
+
+```bash
+docker run --rm -p 3000:3000 -v ./config/.env:/app/config/.env external-elearning-demo
+docker run --rm -p 3000:3000 -v ./secrets:/app/config external-elearning-demo
+```
+
+> Mount secrets **only** at `/app/config` (or point `ENV_FILE` somewhere else). A mount
+> replaces whatever is at its target, so a directory mounted anywhere under `/app/api`
+> hides the source tree and the container exits with
+> `Cannot find module '/app/api/src/index.js'`.
 
 The build is multi-stage: the Angular toolchain exists only while compiling, and the runtime
 carries the API's production dependencies, the built static app, and `contract/` — which the
@@ -80,7 +93,7 @@ This split is not demo scaffolding — it is the shape any real integration has 
 
 ## Against a real LMS
 
-Copy `api/.env.example` to `api/.env` and set both variables:
+Copy `config/.env.example` to `config/.env` and set both variables:
 
 ```
 LMS_BASE_URL=https://your-site.example.com
@@ -170,6 +183,7 @@ push.
 api/         Node + Express. Holds the token, owns the contract mapping
   src/lms/     mock and live clients behind one interface
 web/         Angular standalone app — the simulator in the iframe
+config/      env files only — the one directory safe to mount a secret over
 contract/    the published JSON Schema, used by the tests and by the mock at runtime
 docs/        design spec and implementation plan
 Dockerfile   multi-stage build; runtime carries no Angular toolchain

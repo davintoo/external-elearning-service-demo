@@ -49,6 +49,13 @@ COPY api/src api/src
 # way the real LMS does, so it is application data, not a test fixture.
 COPY contract/ contract/
 
+# Only .env.example lands here — .dockerignore keeps every real .env out of the image.
+# The directory is the point: it is the mount target for a live config, and it holds
+# nothing else, so mounting a file or a whole directory over it cannot shadow code.
+# Mounting a secret anywhere under api/ would, and that removes api/src from the
+# container's view entirely.
+COPY config/ config/
+
 # api/src/index.js resolves the built app relative to its own file
 # (../../web/dist/web/browser), so this layout is load-bearing, not cosmetic.
 COPY --from=build /app/web/dist/web/browser web/dist/web/browser

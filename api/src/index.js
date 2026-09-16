@@ -1,13 +1,13 @@
 import {existsSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 
-import {loadConfig} from './config.js';
+import {envFilePath, loadConfig} from './config.js';
 import {createLmsClient} from './lms/index.js';
 import {createApp} from './app.js';
 
 try {
     // Node loads .env natively; its absence is the normal case for the mock demo.
-    process.loadEnvFile();
+    process.loadEnvFile(envFilePath());
 } catch {
     // no .env file — mock mode
 }
