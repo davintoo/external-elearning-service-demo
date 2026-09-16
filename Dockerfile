@@ -5,10 +5,13 @@
 # Angular 22 requires Node ^22.22.3 || ^24.15.0 || >=26.0.0 (its own `engines` field),
 # so the base must be Node 26 or newer.
 #
-# Default is a Debian-based tag because it is the one this image was actually built and
-# run against. For a smaller image, override with an Alpine variant of the same major:
-#   docker build --build-arg NODE_VERSION=26-alpine -t demo .
-ARG NODE_VERSION=26.7.0-bookworm
+# Debian slim: 381 MB, against 1.65 GB for the full Debian tag. Both were built and run
+# end to end before this default was chosen — including the request that compiles the
+# contract schema with ajv, which is what a stripped base would be most likely to break.
+#
+# Alpine would be smaller again, but the build stage compiles lmdb and msgpackr-extract
+# through node-gyp, so an Alpine base needs python3/make/g++ installed there first.
+ARG NODE_VERSION=26.7.0-bookworm-slim
 
 # ---- build -------------------------------------------------------------------
 # Needs the whole workspace: the Angular toolchain lives in web's dependencies and

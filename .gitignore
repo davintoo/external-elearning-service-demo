@@ -4,3 +4,7 @@ dist/
 *.log
 .angular/
 .superpowers/
+
+# Editor and OS cruft. This repo exists to be cloned, so it stays out.
+.idea/
+.DS_Store

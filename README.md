@@ -30,6 +30,34 @@ npm start --workspace=web       # :4200, proxies /api and /demo
 
 then open <http://localhost:4200/demo/lms>.
 
+## Run it in Docker
+
+```bash
+docker build -t external-elearning-demo .
+docker run --rm -p 3000:3000 external-elearning-demo
+```
+
+Same URL: <http://localhost:3000/demo/lms>. Mock mode is the default, so the container needs
+no LMS, no token and no environment at all.
+
+Against a real LMS, pass the two variables through instead of using a `.env` file:
+
+```bash
+docker run --rm -p 3000:3000 \
+  -e LMS_BASE_URL=https://your-site.example.com \
+  -e LMS_API_TOKEN=<api token> \
+  external-elearning-demo
+```
+
+The build is multi-stage: the Angular toolchain exists only while compiling, and the runtime
+carries the API's production dependencies, the built static app, and `contract/` — which the
+mock client reads at runtime to validate payloads the way the real LMS does.
+
+The image is about 380 MB on its default Debian-slim base. `NODE_VERSION` overrides that base
+if you need a different one — an Alpine variant is smaller again, though the build stage
+compiles `lmdb` and `msgpackr-extract` through `node-gyp`, so Alpine needs `python3`, `make`
+and `g++` installed in the build stage before it will work.
+
 ## The flow it demonstrates
 
 1. **Launched in an iframe** with `?session_id=<uuid>` — the only thing that crosses in the
@@ -116,12 +144,34 @@ The most important one compiles `contract/external-resources-api.schema.json` �
 cbr-api2 publishes, copied here verbatim — and asserts that every payload this app generates
 validates against `#/$defs/ResultRequest`.
 
+## CI / CD
+
+`.github/workflows/ci.yml` runs on every push and pull request to `main`:
+
+- **`test`** — both workspaces, then the web build. Each workspace is named explicitly,
+  because the root `npm test` script covers only the API; relying on it would skip the web
+  specs and still report success. The build is a separate gate, since the suites pass even
+  when the application build is broken.
+- **`image`** — builds the Dockerfile, starts the container, and asserts the demo works with
+  no LMS and no token: mock mode, the built app served, and a 77% submission coming back
+  `fail` against the threshold.
+
+A push to `main` then publishes **the same image that passed that smoke test** — not a
+rebuild from source — to `ghcr.io/davintoo/external-elearning-service-demo`, tagged with the
+commit SHA and `latest`. Pull requests build and test but never publish, so a fork cannot
+push.
+
+> The first publish creates a **private** package. Make it public under the repository's
+> *Packages* settings if client developers should be able to pull it.
+
 ## Layout
 
 ```
-api/       Node + Express. Holds the token, owns the contract mapping
-  src/lms/   mock and live clients behind one interface
-web/       Angular standalone app — the simulator in the iframe
-contract/  the published JSON Schema, used by the tests
-docs/      design spec and implementation plan
+api/         Node + Express. Holds the token, owns the contract mapping
+  src/lms/     mock and live clients behind one interface
+web/         Angular standalone app — the simulator in the iframe
+contract/    the published JSON Schema, used by the tests and by the mock at runtime
+docs/        design spec and implementation plan
+Dockerfile   multi-stage build; runtime carries no Angular toolchain
+.github/     CI: both suites, the web build, and a smoke-tested image
 ```
