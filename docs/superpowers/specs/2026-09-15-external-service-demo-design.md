@@ -240,10 +240,14 @@ the answers preserved — never a lost checklist.
 
 ## 5. Configuration
 
-`api/.env` (`.env.example` committed):
+`config/.env` (`.env.example` committed). The path is resolved from the source module, not
+from `process.cwd()`, so it is the same file however the process is started; `ENV_FILE`
+overrides it. The directory is deliberately separate from `api/`: a secret bind-mounted as
+a directory replaces its target, and any target under `api/` would hide the source tree.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
+| `ENV_FILE` | `config/.env` | Path to the env file to load |
 | `PORT` | `3000` | API port; also serves the built Angular app |
 | `LMS_BASE_URL` | — | e.g. `https://site.example.com`. Set both this and the token for live mode |
 | `LMS_API_TOKEN` | — | API token of a technical user holding `pages.can_send_external_resource_data` |
