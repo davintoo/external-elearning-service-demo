@@ -87,13 +87,32 @@ jobs:
             -d '{"answers":{"c1":"yes","c2":"yes","c3":"yes","c4":"no","c5":"yes","c6":"yes","c7":"yes","c8":"yes"}}' \
             | tee /dev/stderr | grep -q '"status":"fail"'
 
+      # Mounting a config directory is the supported way to hand the container secrets,
+      # so it is a gate: the file has to be read, and the mount must not shadow anything.
+      # Aiming the same mount under /app/api instead is what produced
+      # `Cannot find module '/app/api/src/index.js'` — which is why /app/config exists.
+      - name: Smoke test a mounted config directory
+        run: |
+          mkdir -p ci-secrets
+          printf 'LMS_BASE_URL=https://lms.example.com\nLMS_API_TOKEN=ci-token\n' > ci-secrets/.env
+          docker run -d --name mounted -p 3001:3000 \
+            -v "$PWD/ci-secrets:/app/config" "$IMAGE:${{ github.sha }}"
+          for _ in $(seq 1 30); do
+            curl -sf http://localhost:3001/api/config >/dev/null && break
+            sleep 1
+          done
+          echo "--- /api/config with a mounted config dir ---"
+          curl -sf http://localhost:3001/api/config | tee /dev/stderr | grep -q '"mode":"live"'
+
       - name: Container logs on failure
         if: failure()
-        run: docker logs smoke || true
+        run: |
+          docker logs smoke || true
+          docker logs mounted || true
 
-      - name: Stop container
+      - name: Stop containers
         if: always()
-        run: docker rm -f smoke || true
+        run: docker rm -f smoke mounted || true
 
       # Everything below runs only for a real push to main: pull requests build
       # and smoke-test the image but never publish, so a fork's PR cannot push.
