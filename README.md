@@ -73,14 +73,60 @@ and `g++` installed in the build stage before it will work.
 
 ## The flow it demonstrates
 
-1. **Launched in an iframe** with `?session_id=<uuid>` — the only thing that crosses in the
-   URL. No learner identity, nothing in the vendor's access logs or `Referer`.
-2. **Learner context** fetched with `GET /api/v2/external-resources/sessions/{id}`.
-3. **Sessions list** kept in LocalStorage: one row per launch this browser has seen.
-4. **Start or resume** — answers are saved as they are filled in.
-5. **Result sent** with `POST /api/v2/external-resources/sessions/result` as
+1. **Launched in an iframe** with `?session_id=<uuid>` — the only thing in the URL that
+   identifies anything. No learner identity, nothing in the vendor's access logs or `Referer`.
+2. **Fitted to the frame** over pym.js — the resource reports its own content height and the
+   LMS page applies it, so the task page grows and shrinks with the checklist instead of
+   scrolling inside a box someone had to guess the size of.
+3. **Learner context** fetched with `GET /api/v2/external-resources/sessions/{id}`.
+4. **Sessions list** kept in LocalStorage: one row per launch this browser has seen.
+5. **Start or resume** — answers are saved as they are filled in.
+6. **Result sent** with `POST /api/v2/external-resources/sessions/result` as
    `format: "checklist"`.
-6. **Finish screen** showing what the LMS stored, with the exact JSON sent both ways.
+7. **Finish screen** showing what the LMS stored, with the exact JSON sent both ways.
+
+## Fitting the frame
+
+Only the host can resize an iframe, so the two have to talk. Collaborator's LMS speaks
+pym.js: the child posts a message to its parent and the parent applies the height.
+
+```
+pym xPYMx <childId> xPYMx height xPYMx <pixels>
+```
+
+The LMS names the frame by putting `childId` on the launch URL; every message the resource
+sends is addressed with it. `web/src/app/core/pym.ts` is that half, in about forty lines —
+`@cbr/pym` is not installable from a public registry, and a reference implementation is
+better off showing the protocol than hiding it behind a dependency. It is wire-compatible
+either way.
+
+Two details worth copying into a real integration:
+
+- **Measure `body`, not `documentElement.scrollHeight`.** `scrollHeight` is floored at the
+  viewport, so once the host has grown the frame the number can never come back down, and
+  short screens inherit the tallest one's whitespace.
+- **Report heights of things that are on screen.** Measuring before the first render gets you
+  an empty `body` — padding and nothing else — and the host dutifully collapses the frame to
+  it before reopening a moment later.
+
+The host half is in `api/src/demo-lms.js`, and the interesting line is the guard:
+
+```js
+if (event.source !== frame.contentWindow) return;
+```
+
+Any document in any tab can `postMessage` to the LMS page. Without pinning the sender to the
+frame it created, any of them can resize it — and identifying the exact frame is stronger
+than checking the origin. The applied height is clamped as well, because a resource that is
+buggy or compromised should not be able to push an absurd layout onto a page hosting it.
+
+The mock LMS sends `childId` and nothing else. Unconfigured pym also appends `parentTitle`
+and `parentUrl`, which here would hand the vendor the task name and the learner's position
+in the course in a query string that lands in every access log on the way — so they are
+suppressed, as `optionalparams: false` does upstream. `initialWidth` is left out for a duller
+reason: a server cannot measure the frame before the browser lays it out, and a resource that
+sizes itself in CSS has no use for the number. A child should ignore parameters it does not
+recognise, so it keeps working against an LMS that sends all three.
 
 ## Why there is a Node API
 

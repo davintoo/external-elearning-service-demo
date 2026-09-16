@@ -26,4 +26,23 @@ describe('readLaunch', () => {
     const launch = readLaunch('?session_id=b3f1c9e2-4a17-4c0e-9f31-8a2d5e77b101&force=410');
     expect(launch.force).toBe('410');
   });
+
+  it('reads the child id a pym parent named the frame with', () => {
+    const launch = readLaunch(
+      '?session_id=b3f1c9e2-4a17-4c0e-9f31-8a2d5e77b101&childId=cbr-external-0'
+    );
+    expect(launch.childId).toBe('cbr-external-0');
+  });
+
+  it('reports no child id when the host does not speak pym', () => {
+    expect(readLaunch('?session_id=b3f1c9e2-4a17-4c0e-9f31-8a2d5e77b101').childId).toBeNull();
+  });
+
+  it('rejects a child id that could forge pym message boundaries', () => {
+    // The child id is interpolated into the message string, so a host that could smuggle the
+    // delimiter in could append fields of its own to a payload we assemble.
+    expect(readLaunch('?childId=a xPYMx height xPYMx 99999').childId).toBeNull();
+    expect(readLaunch('?childId=' + 'x'.repeat(65)).childId).toBeNull();
+    expect(readLaunch('?childId=').childId).toBeNull();
+  });
 });

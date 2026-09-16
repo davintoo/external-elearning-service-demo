@@ -50,7 +50,35 @@ test('the page embeds the simulator in a same-origin iframe carrying the session
         const sessionId = location.match(UUID_V4)[0];
         const html = await (await fetch(`${base}${location}`)).text();
 
-        assert.match(html, new RegExp(`<iframe[^>]+src="/\\?session_id=${sessionId}"`));
+        assert.match(
+            html,
+            new RegExp(`<iframe[^>]+src="/\\?session_id=${sessionId}&amp;childId=cbr-external-0"`)
+        );
+    });
+});
+
+test('the frame is named so the resource can address its height back to it', async () => {
+    await withServer(async base => {
+        const id = 'b3f1c9e2-4a17-4c0e-9f31-8a2d5e77b101';
+        const html = await (await fetch(`${base}/demo/lms?session_id=${id}`)).text();
+
+        // The id on the launch URL and the id the listener accepts have to be the same one,
+        // or the page silently never resizes.
+        assert.match(html, /src="[^"]*&amp;childId=cbr-external-0"/);
+        assert.match(html, /var CHILD_ID = 'cbr-external-0';/);
+    });
+});
+
+test('the host page withholds pym\'s optional parent parameters', async () => {
+    await withServer(async base => {
+        const id = 'b3f1c9e2-4a17-4c0e-9f31-8a2d5e77b101';
+        const html = await (await fetch(`${base}/demo/lms?session_id=${id}`)).text();
+
+        // Unconfigured pym also appends these two. Here they would put the task name and the
+        // learner's position in the course into the vendor's access logs, which is exactly
+        // what this demo claims does not happen.
+        assert.equal(html.includes('parentTitle'), false, html);
+        assert.equal(html.includes('parentUrl'), false, html);
     });
 });
 
@@ -59,7 +87,10 @@ test('a forced code is passed through to the embedded app', async () => {
         const id = 'b3f1c9e2-4a17-4c0e-9f31-8a2d5e77b101';
         const html = await (await fetch(`${base}/demo/lms?session_id=${id}&force=410`)).text();
 
-        assert.match(html, new RegExp(`src="/\\?session_id=${id}&amp;force=410"`));
+        assert.match(
+            html,
+            new RegExp(`src="/\\?session_id=${id}&amp;force=410&amp;childId=cbr-external-0"`)
+        );
     });
 });
 

@@ -1,7 +1,8 @@
 import {KeyValuePipe} from '@angular/common';
-import {Component, computed, inject, signal} from '@angular/core';
+import {Component, afterNextRender, computed, inject, signal} from '@angular/core';
 
 import {DemoApi} from './core/api';
+import {PymChild} from './core/pym';
 import {SessionStore} from './core/session-store';
 import {readLaunch} from './core/launch';
 import {ApiError, Checklist, ChecklistValue, SessionContext, SubmitResponse} from './core/types';
@@ -20,6 +21,7 @@ type Screen = 'no-session' | 'loading' | 'error' | 'list' | 'checklist' | 'finis
 })
 export class App {
   private readonly api = inject(DemoApi);
+  private readonly pym = inject(PymChild);
   protected readonly store = inject(SessionStore);
 
   protected readonly launch = signal(readLaunch(window.location.search));
@@ -57,6 +59,11 @@ export class App {
   });
 
   constructor() {
+    // After the first render, not before it. Started any earlier, the first thing measured is
+    // an empty `body` — 32px of padding and nothing else — so the host would snap the frame
+    // shut and reopen it a frame later. Every height reported from here describes something
+    // that is actually on screen.
+    afterNextRender(() => this.pym.start(this.launch().childId));
     void this.load();
   }
 

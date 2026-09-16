@@ -14,6 +14,12 @@ const FORCEABLE = [
     ['429', '429 — rate limited']
 ];
 
+// The name this page gives the frame it creates, echoed back in every pym message the
+// resource sends. A constant rather than a per-render value: the id only has to be unique
+// among the frames on one page, and minting a fresh one each render would make two loads of
+// the same URL differ for no gain.
+const CHILD_ID = 'cbr-external-0';
+
 // Escapes `'` as well as `"`, so the helper stays correct if an attribute is ever written
 // single-quoted. Leaving it out makes "every attribute here is double-quoted" an unwritten
 // invariant that a later edit can silently break.
@@ -33,7 +39,16 @@ function renderPage({sessionId, force}) {
     const query = (id, code) => `/?session_id=${encodeURIComponent(id)}` +
         (code ? `&force=${encodeURIComponent(code)}` : '');
 
-    const iframeSrc = escapeHtml(query(sessionId, force));
+    // `childId` goes on the frame's URL only, never on the links back to this page. It is a
+    // literal here, which is what keeps the script at the foot of this document free of any
+    // query-derived value.
+    //
+    // Deliberately absent: `parentTitle` and `parentUrl`, which unconfigured pym also appends.
+    // They would hand the vendor the task name and the learner's position in the course, in a
+    // query string that lands in every access log on the way. `initialWidth` is absent for a
+    // duller reason — this page cannot measure the frame before the browser lays it out, and a
+    // resource that sizes itself in CSS has no use for the number.
+    const iframeSrc = escapeHtml(`${query(sessionId, force)}&childId=${CHILD_ID}`);
     const options = FORCEABLE.map(([code, label]) => {
         const href = escapeHtml(`/demo/lms${query(sessionId, code).slice(1)}`);
         const current = (force || '') === code ? ' aria-current="true"' : '';
@@ -52,7 +67,9 @@ function renderPage({sessionId, force}) {
   header { background: #16181d; color: #fff; padding: 12px 20px; }
   header strong { font-weight: 600; }
   main { padding: 20px; display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr) 260px; }
-  iframe { width: 100%; height: 720px; border: 1px solid #c9ccd2; border-radius: 6px; background: #fff; }
+  /* 720px is the fallback for a resource that never speaks pym; the script below replaces it
+     with the reported height, and the transition keeps that from reading as a glitch. */
+  iframe { width: 100%; height: 720px; border: 1px solid #c9ccd2; border-radius: 6px; background: #fff; transition: height .15s ease; }
   aside { background: #fff; border: 1px solid #c9ccd2; border-radius: 6px; padding: 14px; }
   aside h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; margin: 0 0 8px; }
   ul { list-style: none; margin: 0 0 16px; padding: 0; }
@@ -65,18 +82,55 @@ function renderPage({sessionId, force}) {
 <body>
 <header><strong>Mock LMS</strong> — task “Pump start-up procedure”</header>
 <main>
-  <iframe src="${iframeSrc}" title="External resource"></iframe>
+  <iframe id="resource" src="${iframeSrc}" title="External resource"></iframe>
   <aside>
     <h2>Session</h2>
     <p><code>${escapeHtml(sessionId)}</code></p>
-    <p>This is the only thing the LMS puts in the launch URL. Everything else the external
-       service knows, it fetched server-to-server.</p>
+    <p>The only thing in the launch URL that identifies anything. Everything else the
+       external service knows, it fetched server-to-server.</p>
+    <h2>Frame</h2>
+    <p>Sized by the resource itself, over pym.js. It posts its content height to this page;
+       this page applies it. The URL also carries <code>childId=${CHILD_ID}</code>, which
+       names the frame so the reply can be matched to it — and nothing else.</p>
     <h2>New attempt</h2>
     <ul><li><a href="/demo/lms">Mint a new session id</a></li></ul>
     <h2>Force an LMS error</h2>
     <ul>${options}</ul>
   </aside>
 </main>
+<script>
+(function () {
+    var CHILD_ID = '${CHILD_ID}';
+    var MAX_HEIGHT = 20000;
+    var frame = document.getElementById('resource');
+
+    // pym's frame format, assembled rather than matched with a regex so the delimiter needs
+    // no escaping. Only the child id this page minted is accepted, so a second embedded
+    // resource could not resize this one's frame.
+    var prefix = 'pym' + 'xPYMx' + CHILD_ID + 'xPYMx' + 'height' + 'xPYMx';
+
+    window.addEventListener('message', function (event) {
+        // The check that matters. Any document in any tab can postMessage to this window;
+        // without pinning the sender to our own frame, any of them could resize the task
+        // page. Identifying the exact frame is stronger than an origin allowlist.
+        if (event.source !== frame.contentWindow) {
+            return;
+        }
+        if (typeof event.data !== 'string' || event.data.indexOf(prefix) !== 0) {
+            return;
+        }
+
+        var height = Number(event.data.slice(prefix.length));
+        if (!Number.isFinite(height) || height <= 0) {
+            return;
+        }
+
+        // Clamped: a buggy or compromised resource must not be able to push an absurd layout
+        // onto the page hosting it.
+        frame.style.height = Math.min(height, MAX_HEIGHT) + 'px';
+    });
+})();
+</script>
 </body>
 </html>`;
 }

@@ -96,6 +96,11 @@ Four measurement decisions, each avoiding a real bug:
   screen's JSON, a validation card appearing, font load, window resize. Dedupe is needed
   because it also fires on width-only changes.
 
+Reporting starts from `afterNextRender`, not from the component constructor. Started from the
+constructor — which is what this design originally said — the first thing measured is an empty
+`body`: 32px of padding with no content in it. The host applies that faithfully, so the frame
+collapses and reopens a frame later. Verified in a real browser both ways; see *Verification*.
+
 The reporter no-ops when there is no `childId`, or when `window.parent === window`, so
 opening `/?session_id=…` directly is unaffected.
 
@@ -144,6 +149,27 @@ a fake, in the style `test-setup.ts` already uses for `Storage`:
 
 - reads `childId`
 - rejects a `childId` carrying the delimiter
+
+## Verification
+
+The unit tests substitute a fake `ResizeObserver`, so they cannot show that the observer
+fires, that the host applies what it receives, or that growing the frame does not feed back
+into the child's measurement. Those were checked in headless Chrome over CDP, with a
+per-animation-frame recorder capturing every height the host applied:
+
+| | trace |
+|---|---|
+| started from the constructor | `["32px", "527px", "1269px"]` |
+| started from `afterNextRender` | `["117px", "560px", "1269px"]` |
+
+117px is the loading card, 560px the sessions list, 1269px the checklist — each a real
+rendered state. The 32px entry in the first trace is the bug described above; the control run
+confirms the check detects it rather than passing vacuously. The applied height matched the
+child's content to within a pixel at every step, and did not drift when left to settle, which
+is what rules out a feedback loop.
+
+The script is not in the repo: it needs a Chrome binary and a running server, and this project
+has no e2e harness to hang that on.
 
 ## Documentation
 
